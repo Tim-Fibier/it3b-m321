@@ -1,0 +1,54 @@
+spring:
+  application:
+    name: chat-service
+  
+  datasource:
+    url: jdbc:postgresql://postgres:5432/chat_db
+    username: chat_user
+    password: chat_password
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+  
+  redis:
+    host: redis
+    port: 6379
+    timeout: 60000ms
+  
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${KEYCLOAK_URL:http://keycloak:8080}/realms/master/protocol/openid-connect/certs
+          issuer-uri: ${KEYCLOAK_URL:http://keycloak:8080}/realms/master
+
+server:
+  port: ${SERVER_PORT:8081}
+  servlet:
+    context-path: /
+
+logging:
+  level:
+    root: INFO
+    ch.bzz.m321: DEBUG
+    org.springframework.security: DEBUG
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always

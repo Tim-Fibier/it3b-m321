@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M321 Chat App</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div id="app" class="container">
+        <!-- Login-Bereich -->
+        <div id="login-section" class="section">
+            <h1>M321 Chat App</h1>
+            <button id="login-button" class="btn btn-primary">Mit Keycloak anmelden</button>
+            <p id="login-status" class="status-message"></p>
+        </div>
+
+        <!-- Chat-Bereich (verborgen bis Login) -->
+        <div id="chat-section" class="section hidden">
+            <header class="header">
+                <div class="header-left">
+                    <h1>Chat</h1>
+                    <p id="current-user" class="user-info"></p>
+                </div>
+                <div class="header-right">
+                    <button id="logout-button" class="btn btn-secondary">Abmelden</button>
+                </div>
+            </header>
+
+            <main class="main-content">
+                <!-- Chat-Liste -->
+                <aside class="chat-list-sidebar">
+                    <div class="chat-list-header">
+                        <h2>Chats</h2>
+                        <button id="new-chat-button" class="btn btn-small">+ Neu</button>
+                    </div>
+                    <ul id="chat-list" class="chat-list"></ul>
+                </aside>
+
+                <!-- Nachrichten-Bereich -->
+                <section class="chat-window">
+                    <div id="messages-container" class="messages-container">
+                        <p class="empty-state">Wähle einen Chat aus oder erstelle einen neuen.</p>
+                    </div>
+
+                    <!-- Input-Bereich -->
+                    <div class="message-input-area">
+                        <input 
+                            id="message-input" 
+                            type="text" 
+                            placeholder="Nachricht eingeben..." 
+                            class="message-input"
+                            disabled>
+                        <button 
+                            id="send-button" 
+                            class="btn btn-primary" 
+                            disabled>
+                            Senden
+                        </button>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <!-- Modal für neuen Chat -->
+    <div id="new-chat-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Neuer Chat</h2>
+                <button class="modal-close" aria-label="Schliessen">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input 
+                    id="new-chat-name" 
+                    type="text" 
+                    placeholder="Chat-Name eingeben..." 
+                    class="input-field">
+            </div>
+            <div class="modal-footer">
+                <button id="modal-cancel" class="btn btn-secondary">Abbrechen</button>
+                <button id="modal-create" class="btn btn-primary">Erstellen</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+</html>
