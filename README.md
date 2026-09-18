@@ -96,8 +96,8 @@ Die vollständigen Regeln stehen in **CLAUDE.md**.
 |-------|--------|
 | **PLANUNG.md** | Stack, Architektur, Nachrichtenfluss, Datenmodell, Roadmap |
 | **CLAUDE.md** | Codestil-Regeln für dieses Projekt |
-| **docs/design/architektur.html** | Grafische Fassung (lokal im Browser öffnen) |
-| **docs/plan/bootstrap-chat-service.md** | Schritt-für-Schritt-Plan für den ersten Service |
+| **docs/design/2026-08-28-chat-app-architektur.html** | Grafische Fassung (lokal im Browser öffnen) |
+| **docs/plan/2026-09-04-chat-service-bootstrap.md** | Schritt-für-Schritt-Plan für den ersten Service |
 | **docs/skizze-architektur.heic** | Handskizze aus dem Unterricht |
 
 ---

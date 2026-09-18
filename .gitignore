@@ -56,3 +56,9 @@ bin/
 
 # Keycloak
 keycloak_data/
+
+# IntelliJ Output
+out/
+
+# Browser-Automation
+.playwright-mcp/
