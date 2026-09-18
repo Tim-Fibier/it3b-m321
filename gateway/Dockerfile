@@ -8,7 +8,7 @@ COPY . /usr/share/nginx/html
 
 # Health Check
 HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
-  CMD wget --quiet --tries=1 --spider http://localhost/health || exit 1
+  CMD wget --quiet --tries=1 --spider http://127.0.0.1/health || exit 1
 
 EXPOSE 80 443
 

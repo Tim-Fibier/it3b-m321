@@ -14,6 +14,10 @@ import java.time.LocalDateTime;
 @Builder
 public class MessageDTO {
 
+    @Builder.Default
+    @JsonProperty("type")
+    private String type = "message";
+
     @JsonProperty("id")
     private Long id;
 

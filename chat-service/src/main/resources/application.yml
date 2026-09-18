@@ -19,17 +19,26 @@ spring:
         order_inserts: true
         order_updates: true
   
-  redis:
-    host: redis
-    port: 6379
-    timeout: 60000ms
-  
+  data:
+    redis:
+      host: redis
+      port: 6379
+      timeout: 60000ms
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
   security:
     oauth2:
       resourceserver:
         jwt:
-          jwk-set-uri: ${KEYCLOAK_URL:http://keycloak:8080}/realms/master/protocol/openid-connect/certs
-          issuer-uri: ${KEYCLOAK_URL:http://keycloak:8080}/realms/master
+          # jwk-set-uri nutzt den internen Docker-Hostnamen (Schluessel-Abruf zwischen Containern).
+          # issuer-uri muss dagegen exakt dem "iss"-Claim entsprechen, den Keycloak in Tokens
+          # einsetzt - und das ist die oeffentliche URL, ueber die der Browser via Gateway
+          # einloggt (http://localhost/auth -> KC_HOSTNAME=localhost, Zugriff ueber Port 80).
+          jwk-set-uri: ${KEYCLOAK_URL:http://keycloak:8080}/realms/chat/protocol/openid-connect/certs
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost/realms/chat}
 
 server:
   port: ${SERVER_PORT:8081}

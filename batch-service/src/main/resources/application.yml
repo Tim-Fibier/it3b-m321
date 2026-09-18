@@ -19,10 +19,15 @@ spring:
         order_inserts: true
         order_updates: true
   
-  redis:
-    host: redis
-    port: 6379
-    timeout: 60000ms
+  data:
+    redis:
+      host: redis
+      port: 6379
+      timeout: 60000ms
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
 
 server:
   port: ${SERVER_PORT:8083}
