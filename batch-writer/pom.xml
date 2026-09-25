@@ -35,6 +35,18 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- Flyway legt beim Start das Schema an: jede SQL-Datei aus
+             db/migration, die in dieser Datenbank noch nicht gelaufen ist.
+             Das zweite Artefakt bringt die Unterstuetzung fuer PostgreSQL. -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+
         <!-- Lombok erzeugt Logger und Konstruktoren beim Uebersetzen.
              "optional" heisst: nur wir brauchen es, niemand der uns benutzt. -->
         <dependency>
