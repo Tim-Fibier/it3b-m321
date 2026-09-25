@@ -20,6 +20,12 @@ spring:
     username: ${POSTGRES_USER:chat}
     password: ${POSTGRES_PASSWORD:chat}
 
+batch-writer:
+  # Ein Paket ist fertig bei 500 Nachrichten oder nach 200 ms, je nachdem,
+  # was zuerst eintritt (PLANUNG.md 3.6). Startwerte, noch nicht gemessen.
+  batch-size: 500
+  batch-timeout-ms: 200
+
 logging:
   level:
     # Im Unterricht wollen wir jeden Schritt sehen.
