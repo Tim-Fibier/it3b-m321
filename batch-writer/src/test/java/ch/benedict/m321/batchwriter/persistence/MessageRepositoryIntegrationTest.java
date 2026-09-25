@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -30,6 +31,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  */
 @SpringBootTest
 @Testcontainers
+// Den Spring-Kontext nach dieser Klasse schliessen. Sonst liefe sein Listener
+// weiter und versuchte alle 5 s, den schon gestoppten Container zu erreichen.
+@DirtiesContext
 class MessageRepositoryIntegrationTest {
 
     /** Die echte Datenbank, in die geschrieben wird. */

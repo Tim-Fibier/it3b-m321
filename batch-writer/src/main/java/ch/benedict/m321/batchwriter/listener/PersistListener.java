@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
@@ -19,11 +20,17 @@ import java.util.List;
 
 /**
  * Holt Pakete aus chat.persist, schreibt sie und entscheidet, was RabbitMQ
- * danach mit jeder Nachricht tun soll: bestätigen oder ablehnen.
+ * danach mit jeder Nachricht tun soll: bestätigen, zurücklegen oder ablehnen.
  *
  * Die wichtigste Regel dieses Dienstes steht hier: bestätigt wird erst,
  * NACHDEM die Datenbank das Paket committet hat. So geht bei einem Absturz
  * nichts verloren (at-least-once, PLANUNG.md 3.6).
+ *
+ * Fehler werden in zwei Arten getrennt (Spezifikation 3.3 bis 3.5, E6):
+ * - Fehler im INHALT (unlesbar, von der Datenbank abgelehnt): diese Nachricht
+ *   wird nie schreibbar, also sofort in die Dead-Letter-Queue.
+ * - Fehler der UMGEBUNG (Datenbank weg): die Nachricht ist in Ordnung, also
+ *   zurück in die Queue und später nochmals, ohne Obergrenze.
  */
 @Component
 @Slf4j
@@ -32,6 +39,10 @@ public class PersistListener {
 
     private final ChatMessageParser chatMessageParser;
     private final MessageRepository messageRepository;
+
+    /** So lange wird nach einem Datenbankfehler gewartet, bevor es weitergeht. */
+    @Value("${batch-writer.retry-pause-ms}")
+    private long retryPauseMs;
 
     /**
      * Eine gelesene Nachricht zusammen mit ihrer Zustellnummer. Die Nummer
@@ -87,8 +98,8 @@ public class PersistListener {
      * mit EINEM ACK. multiple = true heisst: alles bis und mit dieser Nummer
      * ist erledigt. Die letzte Nachricht im Paket hat die höchste Nummer.
      *
-     * Lehnt die Datenbank das Paket wegen des INHALTS ab, ist die Transaktion
-     * zurückgerollt und nichts geschrieben. Dann geht es einzeln weiter.
+     * Die Reihenfolge der beiden catch-Blöcke ist wichtig: zuerst der
+     * Inhaltsfehler, danach alles andere als Fehler der Umgebung.
      */
     private void writeBatch(List<ReceivedMessage> readableMessages, Channel channel) throws IOException {
         List<ChatMessage> messages = new ArrayList<>();
@@ -103,6 +114,12 @@ public class PersistListener {
                     messages.size(), exception.getMessage());
             writeOneByOne(readableMessages, channel);
             return;
+        } catch (RuntimeException exception) {
+            log.warn("Database not available, batch of {} messages returned to {}: {}",
+                    messages.size(), QueueNames.PERSIST_QUEUE, exception.getMessage());
+            returnBatchToQueue(readableMessages, channel);
+            pauseBeforeRetry();
+            return;
         }
 
         ReceivedMessage last = readableMessages.get(readableMessages.size() - 1);
@@ -111,31 +128,75 @@ public class PersistListener {
     }
 
     /**
+     * Legt das ganze Paket unbestätigt zurück in die Queue (Spezifikation 3.3).
+     * requeue = true: RabbitMQ stellt die Nachrichten erneut zu. Sie sind dort
+     * sicher, bis die Datenbank wieder da ist.
+     */
+    private void returnBatchToQueue(List<ReceivedMessage> readableMessages, Channel channel) throws IOException {
+        ReceivedMessage last = readableMessages.get(readableMessages.size() - 1);
+        channel.basicNack(last.deliveryTag(), true, true);
+    }
+
+    /**
      * Der Einzelweg (Spezifikation 3.5): jede Nachricht in ihrer eigenen
      * Transaktion. Ohne ihn würde eine einzige kaputte Nachricht alle anderen
      * im Paket mitreissen. Er ist langsamer, läuft aber nur im Fehlerfall.
+     *
+     * Fällt die Datenbank ausgerechnet jetzt aus, wird danach einmal gewartet.
      */
     private void writeOneByOne(List<ReceivedMessage> readableMessages, Channel channel) throws IOException {
+        boolean databaseProblem = false;
         for (ReceivedMessage received : readableMessages) {
-            writeSingle(received, channel);
+            boolean written = writeSingle(received, channel);
+            if (!written) {
+                databaseProblem = true;
+            }
+        }
+        if (databaseProblem) {
+            pauseBeforeRetry();
         }
     }
 
     /**
-     * Schreibt eine Nachricht und bestätigt nur sie. Lehnt die Datenbank
-     * auch sie allein ab, ist sie die Giftnachricht: ohne Requeue ablehnen,
-     * RabbitMQ legt sie nach chat.dlq. Ein weiterer Versuch wäre sinnlos,
-     * der Inhalt ändert sich ja nicht.
+     * Schreibt eine Nachricht und entscheidet nur über sie:
+     * geschrieben: bestätigen;
+     * von der Datenbank abgelehnt: das ist die Giftnachricht, ohne Requeue
+     * ablehnen, RabbitMQ legt sie nach chat.dlq;
+     * Datenbank weg: zurück in die Queue.
+     *
+     * @return false, wenn die Datenbank nicht erreichbar war
      */
-    private void writeSingle(ReceivedMessage received, Channel channel) throws IOException {
+    private boolean writeSingle(ReceivedMessage received, Channel channel) throws IOException {
         long deliveryTag = received.deliveryTag();
         try {
             messageRepository.insertOne(received.message());
             channel.basicAck(deliveryTag, false);
+            return true;
         } catch (DataIntegrityViolationException exception) {
             log.warn("Message {} can never be written, sent to {}: {}",
                     received.message().id(), QueueNames.DEAD_LETTER_QUEUE, exception.getMessage());
             channel.basicReject(deliveryTag, false);
+            return true;
+        } catch (RuntimeException exception) {
+            log.warn("Database not available, message {} returned to {}: {}",
+                    received.message().id(), QueueNames.PERSIST_QUEUE, exception.getMessage());
+            channel.basicNack(deliveryTag, false, true);
+            return false;
+        }
+    }
+
+    /**
+     * Wartet kurz, bevor das nächste Paket geholt wird. Ohne diese Pause
+     * würde der Dienst dieselben Nachrichten in einer engen Schleife immer
+     * wieder holen und zurücklegen, solange die Datenbank weg ist.
+     */
+    private void pauseBeforeRetry() {
+        try {
+            Thread.sleep(retryPauseMs);
+        } catch (InterruptedException exception) {
+            // Der Dienst wird gerade beendet: nicht weiter warten, aber das
+            // Signal für den Rest des Programms wieder setzen.
+            Thread.currentThread().interrupt();
         }
     }
 }

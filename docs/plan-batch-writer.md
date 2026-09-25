@@ -316,6 +316,20 @@ und Pause; im Einzelweg `basicNack(tag, false, true)`.
 - [ ] **Schritt 4:** Test grün, alle bisherigen Tests grün.
 - [ ] **Schritt 5: Committen.** `feat: bei Datenbankausfall Paket zurücklegen und wiederholen`
 
+> **Zwei Fallen, die beim Bauen aufgeschlagen sind** (25.09.2026, hier bereits eingearbeitet):
+> 1. **Ohne Behandlung ist es schlimmer als gedacht.** Der rote Test in Schritt 2 hat gezeigt:
+>    Wirft der Listener bei `AcknowledgeMode.MANUAL` eine Ausnahme, bestätigt Spring AMQP nichts
+>    und legt auch nichts zurück. Der Consumer startet neu, die 300 Nachrichten bleiben
+>    unbestätigt hängen, und auch 60 s nach der Rückkehr der Datenbank stand **keine** in der
+>    Tabelle. Das explizite `basicNack(..., requeue = true)` ist also nicht Kosmetik, sondern der
+>    Unterschied zwischen S7 bestanden und nicht bestanden. Deshalb prüft der Test zusätzlich,
+>    dass kein `ListenerContainerConsumerFailedEvent` auftritt.
+> 2. **Spring behält Testkontexte.** Nach jeder Testklasse stoppt Testcontainers die Container,
+>    aber Spring hält den Kontext im Cache, und dessen Listener versucht alle 5 s, den toten Broker
+>    zu erreichen. Das Log füllt sich mit „Consumer raised exception“ aus fremden Klassen. Alle
+>    `@SpringBootTest`-Klassen bekommen deshalb `@DirtiesContext`: der Kontext wird nach der
+>    Klasse geschlossen.
+
 ---
 
 ## Task 9: Docker

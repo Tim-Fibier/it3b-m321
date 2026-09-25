@@ -11,6 +11,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.RabbitMQContainer;
@@ -31,6 +32,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 @SpringBootTest
 @Testcontainers
+// Den Spring-Kontext nach dieser Klasse schliessen. Sonst liefe sein Listener
+// weiter und versuchte alle 5 s, den schon gestoppten Container zu erreichen.
+@DirtiesContext
 class DuplicateMessageIntegrationTest {
 
     /** Die echte Datenbank: hier entscheidet ON CONFLICT über das Duplikat. */

@@ -19,12 +19,19 @@ spring:
     url: jdbc:postgresql://${POSTGRES_HOST:localhost}:5432/${POSTGRES_DB:chat}?reWriteBatchedInserts=true
     username: ${POSTGRES_USER:chat}
     password: ${POSTGRES_PASSWORD:chat}
+    hikari:
+      # Nach 3 s ohne Verbindung gibt der Pool auf (Standard wären 30 s).
+      # So erkennt der batch-writer einen Datenbankausfall schnell und
+      # schreibt nach der Rückkehr schnell weiter (Spezifikation 3.3).
+      connection-timeout: 3000
 
 batch-writer:
   # Ein Paket ist fertig bei 500 Nachrichten oder nach 200 ms, je nachdem,
   # was zuerst eintritt (PLANUNG.md 3.6). Startwerte, noch nicht gemessen.
   batch-size: 500
   batch-timeout-ms: 200
+  # Pause nach einem Datenbankfehler, bevor das nächste Paket geholt wird.
+  retry-pause-ms: 2000
 
 logging:
   level:

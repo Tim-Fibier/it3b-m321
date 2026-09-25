@@ -14,6 +14,7 @@ import org.springframework.amqp.rabbit.listener.RabbitListenerEndpointRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.RabbitMQContainer;
@@ -35,6 +36,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @SpringBootTest
 @Testcontainers
+// Den Spring-Kontext nach dieser Klasse schliessen. Sonst liefe sein Listener
+// weiter und versuchte alle 5 s, den schon gestoppten Container zu erreichen.
+@DirtiesContext
 class PersistListenerIntegrationTest {
 
     /** Die echte Datenbank, in die der Listener schreibt. */
