@@ -24,12 +24,17 @@ Alle Aufgaben werden in **deinem Fork** gelöst. Das Original-Repository bleibt 
 ## Bauen, testen, starten
 
 ```bash
-mvn test                         # alle Tests, RabbitMQ kommt per Testcontainers
-docker compose up --build        # RabbitMQ und chat-service im Netz chat-net
+mvn clean test                   # alle Tests, RabbitMQ und PostgreSQL kommen per Testcontainers
+cp .env.example .env             # einmalig: lokale Zugangsdaten
+docker compose up -d --build     # RabbitMQ, chat-service, PostgreSQL und batch-writer im Netz chat-net
+bash scripts/scenarios.sh        # prüft die Szenarien S2 bis S8 aus Bewertung 1 am laufenden Stack
 ```
 
-Der `chat-service` veröffentlicht bewusst **keinen Port** auf den Host. Der einzige offene Port
-des Gesamtsystems gehört später dem Gateway.
+Kein Dienst veröffentlicht einen Port auf den Host. Der einzige offene Port des Gesamtsystems
+gehört später dem Gateway.
+
+Mehrere `batch-writer` nebeneinander: `docker compose up -d --scale batch-writer=2`. Sie teilen
+sich die Queue `chat.persist` (Competing Consumers).
 
 ## Was gebaut wird
 
@@ -37,8 +42,8 @@ des Gesamtsystems gehört später dem Gateway.
 |---|---|---|---|
 | chat-service | Spring Boot 3, Java 21 | Nimmt Nachrichten per `POST /messages` an, legt sie auf Queue und Fanout-Exchange | vorhanden |
 | rabbitmq | RabbitMQ 3.13 | Message Queue zwischen den Services | vorhanden |
-| batch-writer | Spring Boot 3, Java 21 | Einziger Schreiber in die Datenbank | folgt |
-| postgres | PostgreSQL | Speichert den Chat-Verlauf | folgt |
+| batch-writer | Spring Boot 3, Java 21 | Einziger Schreiber in die Datenbank: holt `chat.persist` in Paketen (500 Stück oder 200 ms), ein `INSERT` pro Paket, ACK nach dem COMMIT | vorhanden |
+| postgres | PostgreSQL 16 | Speichert den Chat-Verlauf in der Tabelle `message`, Schema per Flyway aus dem batch-writer | vorhanden |
 | keycloak | Keycloak | Login (OIDC) | folgt |
 | web-gateway | nginx | Einziger nach aussen offener Port | folgt |
 | Web-UI | React | Browser-Client | folgt |
@@ -54,6 +59,10 @@ erreichbar.
   — grafische Fassung der Planung, lokal im Browser öffnen.
 - [`docs/plan-chat-service.md`](docs/plan-chat-service.md) — Schritt-für-Schritt-Plan, nach dem
   der `chat-service` gebaut wurde. Jeder Schritt mit Test.
+- [`docs/spec-batch-writer.md`](docs/spec-batch-writer.md) — Spezifikation des `batch-writer`:
+  Vertrag der Queue, Verhalten in jedem Fehlerfall, Datenmodell, Abnahmekriterien.
+- [`docs/plan-batch-writer.md`](docs/plan-batch-writer.md) — Umsetzungsplan des `batch-writer`,
+  elf Aufgaben, jede mit Test und eigenem Commit.
 - [`CLAUDE.md`](CLAUDE.md) — Codestil-Regeln für dieses Projekt. Gelten auch für dich.
 - [`docs/flipchart-chat-app.png`](docs/flipchart-chat-app.png) — das Flipchart aus der Lektion,
   von dem die Planung ausgeht.
