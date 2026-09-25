@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -85,6 +86,9 @@ public class PersistListener {
      * Schreibt das ganze Paket in einer Transaktion und bestätigt es danach
      * mit EINEM ACK. multiple = true heisst: alles bis und mit dieser Nummer
      * ist erledigt. Die letzte Nachricht im Paket hat die höchste Nummer.
+     *
+     * Lehnt die Datenbank das Paket wegen des INHALTS ab, ist die Transaktion
+     * zurückgerollt und nichts geschrieben. Dann geht es einzeln weiter.
      */
     private void writeBatch(List<ReceivedMessage> readableMessages, Channel channel) throws IOException {
         List<ChatMessage> messages = new ArrayList<>();
@@ -92,10 +96,46 @@ public class PersistListener {
             messages.add(received.message());
         }
 
-        messageRepository.insertAll(messages);
+        try {
+            messageRepository.insertAll(messages);
+        } catch (DataIntegrityViolationException exception) {
+            log.warn("Batch of {} messages rejected by the database, writing one by one: {}",
+                    messages.size(), exception.getMessage());
+            writeOneByOne(readableMessages, channel);
+            return;
+        }
 
         ReceivedMessage last = readableMessages.get(readableMessages.size() - 1);
         channel.basicAck(last.deliveryTag(), true);
         log.info("Batch of {} messages written and acknowledged", messages.size());
+    }
+
+    /**
+     * Der Einzelweg (Spezifikation 3.5): jede Nachricht in ihrer eigenen
+     * Transaktion. Ohne ihn würde eine einzige kaputte Nachricht alle anderen
+     * im Paket mitreissen. Er ist langsamer, läuft aber nur im Fehlerfall.
+     */
+    private void writeOneByOne(List<ReceivedMessage> readableMessages, Channel channel) throws IOException {
+        for (ReceivedMessage received : readableMessages) {
+            writeSingle(received, channel);
+        }
+    }
+
+    /**
+     * Schreibt eine Nachricht und bestätigt nur sie. Lehnt die Datenbank
+     * auch sie allein ab, ist sie die Giftnachricht: ohne Requeue ablehnen,
+     * RabbitMQ legt sie nach chat.dlq. Ein weiterer Versuch wäre sinnlos,
+     * der Inhalt ändert sich ja nicht.
+     */
+    private void writeSingle(ReceivedMessage received, Channel channel) throws IOException {
+        long deliveryTag = received.deliveryTag();
+        try {
+            messageRepository.insertOne(received.message());
+            channel.basicAck(deliveryTag, false);
+        } catch (DataIntegrityViolationException exception) {
+            log.warn("Message {} can never be written, sent to {}: {}",
+                    received.message().id(), QueueNames.DEAD_LETTER_QUEUE, exception.getMessage());
+            channel.basicReject(deliveryTag, false);
+        }
     }
 }
