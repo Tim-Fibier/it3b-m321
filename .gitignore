@@ -1,64 +1,20 @@
-# Maven
+# Build
 target/
-*.jar
-*.war
-*.ear
-.m2/
-
-# IDEs
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-.DS_Store
-*.iml
-
-# Gradle
 build/
-.gradle/
-
-# Node / npm
-node_modules/
-package-lock.json
-yarn.lock
-
-# Environment
-.env
-.env.local
-.env.*.local
-
-# Docker
-docker-compose.override.yml
-
-# Logs
-*.log
-logs/
-
-# Database
-postgres_data/
-redis_data/
-
-# Build artifacts
-.classpath
-.project
-.settings/
-bin/
-
-# Java
-*.class
-*.jar
-*.war
-*.ear
-*.zip
-*.tar.gz
-*.rar
-
-# Keycloak
-keycloak_data/
-
-# IntelliJ Output
 out/
+node_modules/
+dist/
 
-# Browser-Automation
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Betriebssystem
+.DS_Store
+
+# Lokale Geheimnisse
+.env
+
+# Playwright-Prüfartefakte
 .playwright-mcp/

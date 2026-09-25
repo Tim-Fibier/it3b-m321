@@ -1,31 +1,20 @@
-# Stufe 1: Maven Build
-FROM maven:3.9-eclipse-temurin-21 AS builder
-
+# Stufe 1: bauen
+# Der Build-Kontext ist das Projekt-Wurzelverzeichnis, weil das Modul
+# das Eltern-POM braucht.
+FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
-
-# Copy pom.xml
 COPY pom.xml .
+COPY chat-service/pom.xml chat-service/pom.xml
+COPY chat-service/src chat-service/src
+# Tests werden hier übersprungen: Testcontainers bräuchte einen Docker-Daemon
+# INNERHALB des Builds. Getestet wird vorher mit "mvn test".
+RUN mvn -q -pl chat-service -am package -DskipTests
 
-# Download dependencies (für schnelleres Rebuild mit Cache)
-RUN mvn dependency:go-offline -B
-
-# Copy Source Code
-COPY src ./src
-
-# Baue JAR
-RUN mvn clean package -DskipTests -B
-
-# Stufe 2: Laufzeit
-FROM eclipse-temurin:21-jre-alpine
-
+# Stufe 2: laufen
+FROM eclipse-temurin:21-jre
 WORKDIR /app
-
-# Copy JAR von builder
-COPY --from=builder /build/target/*.jar app.jar
-
-# Health Check
-HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
-  CMD wget --quiet --tries=1 --spider http://localhost:8081/actuator/health || exit 1
-
-# Start Application
+COPY --from=build /build/chat-service/target/chat-service-0.1.0-SNAPSHOT.jar app.jar
+# EXPOSE dokumentiert den Port nur. Veröffentlicht wird er NICHT —
+# siehe docker-compose.yml, dort steht bewusst kein ports:-Eintrag.
+EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
