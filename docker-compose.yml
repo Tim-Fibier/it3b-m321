@@ -1,6 +1,5 @@
-# Ausbaustufe 1: nur der Broker und der chat-service.
-# Postgres, Keycloak, web-gateway und batch-writer kommen in den
-# folgenden Schritten dazu.
+# Ausbaustufe 2: Broker, chat-service, PostgreSQL und batch-writer.
+# Keycloak und web-gateway kommen in den folgenden Schritten dazu.
 services:
 
   rabbitmq:
@@ -11,7 +10,10 @@ services:
     networks:
       - chat-net
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      # check_port_connectivity statt ping: ping meldet "gesund", sobald der
+      # Knoten läuft, auch wenn Port 5672 noch keine Verbindung annimmt. Die
+      # Dienste, die auf "gesund" warten, bekamen dann "Connection refused".
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -30,8 +32,54 @@ services:
     networks:
       - chat-net
 
+  # Die Datenbank für den Chat-Verlauf. Das Schema legt der batch-writer
+  # beim Start selbst an (Flyway), hier steht nur die leere Datenbank.
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      # Die Daten überleben ein "docker compose down" und einen Neustart.
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - chat-net
+    healthcheck:
+      # $$ statt $: die Variable wird im Container ausgewertet, nicht von Compose.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # Der einzige Schreiber in die Tabelle message. Mehrere Instanzen sind
+  # erlaubt (docker compose up --scale batch-writer=2): sie teilen sich die
+  # Queue chat.persist als Competing Consumers.
+  batch-writer:
+    build:
+      context: .
+      dockerfile: batch-writer/Dockerfile
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - chat-net
+
 # KEIN ports:-Eintrag in dieser Datei. Der einzige offene Port des
 # Gesamtsystems gehört später dem web-gateway.
 networks:
   chat-net:
     name: chat-net
+
+volumes:
+  postgres-data:

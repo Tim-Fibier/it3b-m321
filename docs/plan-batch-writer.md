@@ -343,14 +343,24 @@ und Pause; im Einzelweg `basicNack(tag, false, true)`.
 **Schnittstellen:** Dienste `postgres` und `batch-writer` im Netz `chat-net`, **ohne** `ports:`.
 
 - [ ] **Schritt 1: Prüfung zuerst festlegen:** `docker compose config --services` muss
-  `postgres` und `batch-writer` enthalten, `grep -n "ports:" docker-compose.yml` darf nichts
-  finden. → heute rot.
+  `postgres` und `batch-writer` enthalten, `grep -nE "^\s+ports:" docker-compose.yml` darf nichts
+  finden (nur echte Einträge, nicht der Kommentar „KEIN ports:-Eintrag“). → heute rot.
 - [ ] **Schritt 2: Umsetzen.** `postgres:16-alpine` mit `pg_isready`-Healthcheck;
   `batch-writer` mit `depends_on` auf gesunde `rabbitmq` und `postgres`.
 - [ ] **Schritt 3: Prüfen.** `cp .env.example .env && docker compose up -d --build`,
   `docker compose ps` → alles läuft, keine Ports; zehn Nachrichten senden
   (Spec 5, `send 10`) → zehn Zeilen.
 - [ ] **Schritt 4: Committen.** `chore: batch-writer und postgres in docker-compose abbilden`
+
+> **Zwei Fallen, die beim Bauen aufgeschlagen sind** (25.09.2026, hier bereits eingearbeitet):
+> 1. **Der chat-service liess sich nicht mehr bauen.** Maven liest beim Start alle Module aus dem
+>    Eltern-POM. Seit Task 1 steht dort `batch-writer`, das Dockerfile des `chat-service` kopierte
+>    aber nur `chat-service/pom.xml`: „Child module batch-writer does not exist“. Beide
+>    Dockerfiles kopieren jetzt die POMs **aller** Module. Ohne diese Korrektur wäre S2 gescheitert.
+> 2. **„gesund“ war zu früh.** Der Healthcheck `rabbitmq-diagnostics ping` meldet „gesund“, sobald
+>    der Knoten läuft, Port 5672 nimmt da noch nichts an. Der batch-writer bekam beim Start
+>    „Connection refused“ und verband sich erst nach 10 s selbst neu. Neu:
+>    `rabbitmq-diagnostics check_port_connectivity`, danach startete er ohne einen einzigen Fehler.
 
 ---
 
