@@ -319,9 +319,12 @@ und Pause; im Einzelweg `basicNack(tag, false, true)`.
 > **Zwei Fallen, die beim Bauen aufgeschlagen sind** (25.09.2026, hier bereits eingearbeitet):
 > 1. **Ohne Behandlung ist es schlimmer als gedacht.** Der rote Test in Schritt 2 hat gezeigt:
 >    Wirft der Listener bei `AcknowledgeMode.MANUAL` eine Ausnahme, bestätigt Spring AMQP nichts
->    und legt auch nichts zurück. Der Consumer startet neu, die 300 Nachrichten bleiben
->    unbestätigt hängen, und auch 60 s nach der Rückkehr der Datenbank stand **keine** in der
->    Tabelle. Das explizite `basicNack(..., requeue = true)` ist also nicht Kosmetik, sondern der
+>    und legt auch nichts zurück (`BlockingQueueConsumer.rollbackOnExceptionIfNecessary` schickt
+>    in diesem Modus weder ACK noch NACK). Der Consumer läuft danach einfach weiter, er startet
+>    nicht neu. Die 300 Nachrichten bleiben unbestätigt auf seinem offenen Kanal hängen, und
+>    RabbitMQ gibt sie erst zurück, wenn dieser Kanal schliesst. Darum stand auch 60 s nach der
+>    Rückkehr der Datenbank **keine** in der Tabelle. Das explizite `basicNack(..., requeue = true)`
+>    ist also nicht Kosmetik, sondern der
 >    Unterschied zwischen S7 bestanden und nicht bestanden. Deshalb prüft der Test zusätzlich,
 >    dass kein `ListenerContainerConsumerFailedEvent` auftritt.
 > 2. **Spring behält Testkontexte.** Nach jeder Testklasse stoppt Testcontainers die Container,
