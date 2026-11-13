@@ -381,7 +381,10 @@ härtere Fall. Auf frischem Klon: S2 bis S8 alle OK (S4 nach 4 s, S5 in 5 s inkl
 
 **Test:** `mvn clean test`: ein Lauf, alles grün.
 
-**Geprüft und korrigiert:** _nach dem Schritt ausfüllen_
+**Geprüft und korrigiert:** README ergänzt: Live-Zustellung in der Tabelle „Was gebaut wird“, Befehl für
+`scenarios-live.sh`, Erklärung zu `--scale chat-service=2` (Publish/Subscribe statt Competing Consumers)
+mit `curl`-Beispiel, Links auf Spec und Plan. `mvn clean test` im Wurzelverzeichnis: 65 Tests grün (47
+`chat-service`, 18 `batch-writer`).
 
 ---
 
