@@ -194,7 +194,12 @@ Instanz wirklich eigen ist.
 
 **Test:** `TwoInstancesDeliveryIntegrationTest`, wie im Auftrag.
 
-**Geprüft und korrigiert:** _nach dem Schritt ausfüllen_
+**Geprüft und korrigiert:** Test gelesen: Er startet zwei Instanzen mit eigener Instanz-ID gegen
+denselben RabbitMQ und prüft 400 Ereignisse pro Client in Raum A, ohne doppelte, pro Absender in
+Reihenfolge. Raum B bekommt keine Nachricht. Gegenprobe mit gemeinsamer, nicht exklusiver Queue: 200
+statt 400, der Test schlägt also fehl, wenn die eigene Queue fehlt. Korrigiert: Die Einstellungen der
+Instanzen gehen als Kommandozeilen-Argumente hinein, weil `application.yml` sonst Port und Broker
+überschreibt. Alle 26 Tests sind grün.
 
 ---
 
