@@ -358,7 +358,14 @@ Volume Daten von PostgreSQL 17 enthält. Deshalb unter eigenem Projektnamen mit 
 
 **Test:** Das Skript selbst, auf einem frischen Klon: alle Szenarien `OK`.
 
-**Geprüft und korrigiert:** _nach dem Schritt ausfüllen_
+**Geprüft und korrigiert:** Skript gelesen und am Stack laufen lassen: S2 bis S8 alle OK. Messwerte: S4
+Queue nach 3 s weg. S5 100 Nachrichten live in 2 s. S6 Queue der pausierten Instanz höchstens 1000,
+aktive Instanz 5000, nach dem Fortsetzen 10 von 10. Lange Pause von 150 s: Queue gelöscht und neu
+angelegt, danach 10 von 10. S7 genau 50 nachgeholt, in `(sent_at, id)`-Reihenfolge. Korrigiert: Auf dem
+frischen Klon schlug S4 fehl, weil die Systemzeit mitten im Lauf um eine Stunde sprang und das Skript
+mit Uhrzeiten gemessen hat. Jetzt misst es mit `/proc/uptime` aus dem Container. Abweichung vom Plan:
+Die 5000 gehen nur parallel raus (5 × 1000), nicht zusätzlich einmal nacheinander. Parallel ist der
+härtere Fall. Auf frischem Klon: S2 bis S8 alle OK (S4 nach 4 s, S5 in 5 s inklusive Senden).
 
 ---
 
