@@ -8,6 +8,18 @@ spring:
     port: 5672
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+  datasource:
+    # Dieselbe Datenbank, in die der batch-writer schreibt. Der chat-service
+    # liest daraus nur, um verpasste Nachrichten nachzuliefern. Die Verbindung
+    # entsteht erst beim ersten Lesen: Ohne Datenbank startet der Dienst
+    # trotzdem, und der Live-Weg läuft weiter.
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:5432/${POSTGRES_DB:chat}
+    username: ${POSTGRES_USER:chat}
+    password: ${POSTGRES_PASSWORD:chat}
+    hikari:
+      # Nach 3 s ohne Verbindung gibt der Pool auf (Standard wären 30 s).
+      # So bekommt ein Client bei Datenbankausfall schnell eine 503.
+      connection-timeout: 3000
 
 server:
   port: 8080
