@@ -18,6 +18,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @Slf4j
 public class MessageExceptionHandler {
 
+    /**
+     * Fängt jeden Broker-Fehler beim Senden ab und antwortet mit 503 statt 500,
+     * damit der Aufrufer weiss, dass sich ein späterer Versuch lohnt.
+     */
     @ExceptionHandler(AmqpException.class)
     public ResponseEntity<String> handleBrokerNotAvailable(AmqpException exception) {
         log.error("Broker not reachable, message rejected", exception);

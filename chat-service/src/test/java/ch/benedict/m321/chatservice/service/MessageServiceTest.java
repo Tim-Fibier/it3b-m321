@@ -32,6 +32,7 @@ class MessageServiceTest {
             super(null);
         }
 
+        /** Merkt sich die Nachricht und zählt mit, statt an RabbitMQ zu senden. */
         @Override
         public void publish(ChatMessage message) {
             this.published = message;
@@ -39,6 +40,7 @@ class MessageServiceTest {
         }
     }
 
+    /** ID und Zeitstempel vergibt der Dienst, nicht der Client. */
     @Test
     void assignsIdAndTimestamp() {
         RecordingPublisher publisher = new RecordingPublisher();
@@ -53,6 +55,10 @@ class MessageServiceTest {
         assertNotNull(response.sentAt());
     }
 
+    /**
+     * Die ID in der Antwort muss die der veröffentlichten Nachricht sein, sonst
+     * findet der Client seine Nachricht später nicht wieder.
+     */
     @Test
     void publishesExactlyOnceWithTheSameId() {
         RecordingPublisher publisher = new RecordingPublisher();
@@ -70,6 +76,10 @@ class MessageServiceTest {
         assertEquals("Hallo", publisher.published.content());
     }
 
+    /**
+     * Zwei gleiche Anfragen sind zwei Nachrichten. Mit derselben ID würde die
+     * zweite in der Datenbank als Duplikat verschwinden.
+     */
     @Test
     void assignsADifferentIdEveryTime() {
         RecordingPublisher publisher = new RecordingPublisher();

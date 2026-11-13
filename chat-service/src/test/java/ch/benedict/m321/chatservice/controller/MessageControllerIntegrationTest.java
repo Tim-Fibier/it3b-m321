@@ -40,6 +40,10 @@ class MessageControllerIntegrationTest {
     @Autowired
     private RabbitTemplate rabbitTemplate;
 
+    /**
+     * Ein gültiger POST liefert 202 mit ID und Zeitstempel und legt die
+     * Nachricht in chat.persist.
+     */
     @Test
     void acceptsMessageAndPutsItOnTheQueue() throws Exception {
         String requestBody = """
@@ -68,6 +72,7 @@ class MessageControllerIntegrationTest {
         assertEquals("Anna Muster", message.senderName());
     }
 
+    /** Leerer Text darf gar nicht erst in eine Queue gelangen: Die Validierung weist mit 400 ab. */
     @Test
     void rejectsEmptyContent() throws Exception {
         String requestBody = """

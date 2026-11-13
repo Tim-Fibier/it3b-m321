@@ -13,6 +13,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class ChatServiceApplication {
 
+    /** Startet Spring Boot; von hier aus legt Spring Queues, Exchange und Web-Endpunkte an. */
     public static void main(String[] args) {
         SpringApplication.run(ChatServiceApplication.class, args);
     }

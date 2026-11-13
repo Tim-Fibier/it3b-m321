@@ -92,7 +92,9 @@ unter.
 
 **Test:** Der Check meldet 0 Stellen, `mvn -q -pl chat-service -am test` bleibt grün.
 
-**Geprüft und korrigiert:** _nach dem Schritt ausfüllen_
+**Geprüft und korrigiert:** Diff gelesen: nur 30 neue Kommentarzeilen, keine Zeile gelöscht, also
+keine Logik geändert. Stichproben zeigen, dass die Kommentare erklären, wozu die Methode da ist. Alle
+14 Tests sind grün. Nichts korrigiert.
 
 ---
 

@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  */
 class MessageExceptionHandlerTest {
 
+    /** Prüft den Handler direkt, ohne Broker: Eine AmqpException wird zu 503 mit Text. */
     @Test
     void answersWithServiceUnavailable() {
         MessageExceptionHandler handler = new MessageExceptionHandler();
