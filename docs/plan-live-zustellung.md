@@ -272,7 +272,11 @@ sauber aufgelöst, die ID selbst ist nicht dabei, andere Räume auch nicht. Eine
 ID aus einem anderen Raum werden als „nicht gefunden“ gemeldet. Alle bisherigen Tests
 laufen weiter ohne Postgres-Container.
 
-**Geprüft und korrigiert:** _nach dem Schritt ausfüllen_
+**Geprüft und korrigiert:** `MessageHistoryRepository` gelesen: Es liest nur, es gibt kein Flyway, das
+Schema bleibt beim `batch-writer`. `findSentAt` prüft auch den Raum, `findAfter` vergleicht
+`(sent_at, id)` und sortiert danach. Der Test mit echter PostgreSQL deckt Reihenfolge, gleiche
+Zeitstempel, fremde Räume und unbekannte IDs ab. Gegenprobe ohne ID im Vergleich: 0 statt 1 Nachricht.
+Die übrigen Tests laufen weiter ohne Datenbank. Nichts korrigiert. Alle 37 Tests sind grün.
 
 ---
 
