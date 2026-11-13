@@ -1,14 +1,12 @@
 package ch.benedict.m321.chatservice.stream;
 
-import ch.benedict.m321.chatservice.ChatServiceApplication;
+import ch.benedict.m321.chatservice.TestInstances;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
-import org.springframework.core.env.Environment;
 import org.testcontainers.containers.RabbitMQContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -58,8 +56,8 @@ class TwoInstancesDeliveryIntegrationTest {
     /** Startet beide Instanzen, nachdem der RabbitMQ-Container läuft. */
     @BeforeAll
     static void startInstances() {
-        instanceA = startInstance("instance-a");
-        instanceB = startInstance("instance-b");
+        instanceA = TestInstances.start(rabbitMq, "instance-a");
+        instanceB = TestInstances.start(rabbitMq, "instance-b");
     }
 
     /** Fährt beide Instanzen herunter; ihre Live-Queues verschwinden damit. */
@@ -81,8 +79,8 @@ class TwoInstancesDeliveryIntegrationTest {
      */
     @Test
     void bothClientsInRoomGetEveryMessageExactlyOnce() throws Exception {
-        int portA = portOf(instanceA);
-        int portB = portOf(instanceB);
+        int portA = TestInstances.portOf(instanceA);
+        int portB = TestInstances.portOf(instanceB);
         UUID roomA = UUID.randomUUID();
         UUID roomB = UUID.randomUUID();
         URI streamAtA = streamUri(portA, roomA);
@@ -155,31 +153,6 @@ class TwoInstancesDeliveryIntegrationTest {
             events.add(event);
         }
         return events;
-    }
-
-    /**
-     * Startet eine Instanz des chat-service wie einen eigenen Container: eigener
-     * zufälliger Port, eigene Instanz-ID, derselbe Broker.
-     *
-     * Die Werte gehen als Kommandozeilen-Argumente hinein, weil diese Vorrang vor
-     * application.yml haben. Als blosse Vorgabewerte würden sie dort überschrieben.
-     */
-    private static ConfigurableApplicationContext startInstance(String instanceId) {
-        SpringApplicationBuilder builder = new SpringApplicationBuilder(ChatServiceApplication.class);
-        return builder.run(
-                "--server.port=0",
-                "--chat-service.instance-id=" + instanceId,
-                "--spring.rabbitmq.host=" + rabbitMq.getHost(),
-                "--spring.rabbitmq.port=" + rabbitMq.getAmqpPort(),
-                "--spring.rabbitmq.username=" + rabbitMq.getAdminUsername(),
-                "--spring.rabbitmq.password=" + rabbitMq.getAdminPassword());
-    }
-
-    /** Der zufällige Port, den die Instanz beim Start bekommen hat. */
-    private static int portOf(ConfigurableApplicationContext instance) {
-        Environment environment = instance.getEnvironment();
-        String port = environment.getProperty("local.server.port");
-        return Integer.parseInt(port);
     }
 
     /** Baut die Adresse des Streams einer Instanz für einen Raum. */

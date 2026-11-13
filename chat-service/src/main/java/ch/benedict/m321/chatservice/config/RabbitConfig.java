@@ -25,6 +25,26 @@ import org.springframework.context.annotation.Configuration;
 public class RabbitConfig {
 
     /**
+     * Höchstens so viele Nachrichten liegen in der Live-Queue bereit.
+     *
+     * Die Grenze für eine hängende Instanz ist 1000. x-max-length zählt aber nur
+     * bereitliegende Nachrichten. Die bis zu LIVE_PREFETCH Nachrichten, die schon
+     * an die Instanz ausgeliefert, aber noch nicht bestätigt sind, kommen dazu, und
+     * rabbitmqctl zeigt beide zusammen. 950 + 50 = 1000.
+     */
+    static final int LIVE_QUEUE_MAX_LENGTH = 950;
+
+    /** So viele Nachrichten darf RabbitMQ der Instanz ohne Bestätigung vorausschicken. */
+    static final int LIVE_PREFETCH = 50;
+
+    /**
+     * Nach 30 s verwirft RabbitMQ eine Live-Nachricht, die noch nicht abgeholt
+     * wurde. Eine so alte Live-Nachricht ist wertlos; wer sie braucht, holt sie
+     * über Last-Event-ID aus der Datenbank.
+     */
+    static final int LIVE_MESSAGE_TTL_MILLIS = 30_000;
+
+    /**
      * Der Schreibweg. "durable" heisst: die Queue überlebt einen Neustart
      * des Brokers. Was der Verbraucher endgültig ablehnt, landet über den
      * Standard-Exchange ("") in der Dead-Letter-Queue.
@@ -61,12 +81,24 @@ public class RabbitConfig {
      * die Verbraucher die Nachrichten, und jede käme nur bei einer Instanz an.
      * Nicht dauerhaft und exklusiv: Die Queue gehört zur Verbindung dieser
      * Instanz, und RabbitMQ löscht sie, sobald diese Verbindung weg ist.
+     * Bewusst kein x-expires: RabbitMQ sagt nicht zu, wie schnell eine
+     * abgelaufene Queue gelöscht wird.
+     *
+     * Ist die Queue voll, wirft RabbitMQ die älteste bereitliegende Nachricht weg
+     * (drop-head). Für eine Live-Anzeige ist das richtig: Die neueste zählt, und
+     * der Verlauf steht in der Datenbank.
+     *
+     * Geht die Verbindung verloren, legt Spring die Queue beim Wiederverbinden
+     * aus dieser Bean neu an, mit denselben Grenzen.
      */
     @Bean
     public Queue liveQueue(@Value("${chat-service.instance-id}") String instanceId) {
         String queueName = QueueNames.LIVE_QUEUE_PREFIX + instanceId;
         return QueueBuilder.nonDurable(queueName)
                 .exclusive()
+                .maxLength(LIVE_QUEUE_MAX_LENGTH)
+                .overflow(QueueBuilder.Overflow.dropHead)
+                .ttl(LIVE_MESSAGE_TTL_MILLIS)
                 .build();
     }
 
@@ -97,6 +129,9 @@ public class RabbitConfig {
      * Absenders gleichzeitig verarbeitet werden und vertauscht beim Client
      * ankommen. Wirft der Listener doch einmal eine Exception, wird die Nachricht
      * verworfen statt zurückgelegt, sonst käme sie endlos wieder.
+     *
+     * Prefetch 50 statt der Vorgabe 250: Zusammen mit LIVE_QUEUE_MAX_LENGTH
+     * bleibt eine hängende Instanz so bei höchstens 1000 Nachrichten.
      */
     @Bean
     public SimpleRabbitListenerContainerFactory liveListenerContainerFactory(ConnectionFactory connectionFactory) {
@@ -104,6 +139,7 @@ public class RabbitConfig {
         factory.setConnectionFactory(connectionFactory);
         factory.setConcurrentConsumers(1);
         factory.setMaxConcurrentConsumers(1);
+        factory.setPrefetchCount(LIVE_PREFETCH);
         factory.setDefaultRequeueRejected(false);
         return factory;
     }

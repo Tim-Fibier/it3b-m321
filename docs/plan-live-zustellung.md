@@ -222,7 +222,12 @@ publiziert 2000 Nachrichten, bereitliegend plus unbestätigt bleibt höchstens 1
 sind noch da. Wird die Instanz geschlossen (Spring-Kontext zu, also Verbindung weg), ist ihre Queue
 nach höchstens 30 s weg, `chat.persist` und `chat.dlq` bleiben.
 
-**Geprüft und korrigiert:** _nach dem Schritt ausfüllen_
+**Geprüft und korrigiert:** `RabbitConfig` gelesen: `x-max-length` 950 mit `drop-head`, TTL 30 s, kein
+`x-expires`, Prefetch 50; die Begründung für 950 + 50 = 1000 steht im Kommentar. Der Test zeigt 950
+bereit + 50 unbestätigt = 1000, und die älteste behaltene Nachricht ist Nr. 1051. Die Queue einer
+beendeten Instanz ist innerhalb von 30 s weg, `chat.persist` und `chat.dlq` bleiben. Gegenprobe ohne
+`x-max-length`: 1950 statt 950. Korrigiert: Der Test zählt erst nach Publisher Confirms, sonst wäre das
+Ergebnis Zufall. Startcode für Testinstanzen in `TestInstances` ausgelagert. Alle 28 Tests sind grün.
 
 ---
 
