@@ -6,6 +6,8 @@ import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.FanoutExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
+import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -86,5 +88,23 @@ public class RabbitConfig {
     @Bean
     public MessageConverter jsonMessageConverter(ObjectMapper objectMapper) {
         return new Jackson2JsonMessageConverter(objectMapper);
+    }
+
+    /**
+     * Die Einstellungen für den Listener auf der Live-Queue.
+     *
+     * Genau ein Consumer: Mit mehreren könnten zwei Nachrichten desselben
+     * Absenders gleichzeitig verarbeitet werden und vertauscht beim Client
+     * ankommen. Wirft der Listener doch einmal eine Exception, wird die Nachricht
+     * verworfen statt zurückgelegt, sonst käme sie endlos wieder.
+     */
+    @Bean
+    public SimpleRabbitListenerContainerFactory liveListenerContainerFactory(ConnectionFactory connectionFactory) {
+        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+        factory.setConnectionFactory(connectionFactory);
+        factory.setConcurrentConsumers(1);
+        factory.setMaxConcurrentConsumers(1);
+        factory.setDefaultRequeueRejected(false);
+        return factory;
     }
 }

@@ -167,7 +167,11 @@ Registry weiter.
 **Test:** `LiveDeliveryIntegrationTest`: `POST /messages` für Raum A kommt beim Client in Raum A
 an, das `data:` enthält alle sechs Felder, der Client in Raum B bekommt nichts.
 
-**Geprüft und korrigiert:** _nach dem Schritt ausfüllen_
+**Geprüft und korrigiert:** `LiveMessageListener` gelesen: Er nimmt die rohe Nachricht, liest nur `id`
+und `roomId` und gibt das JSON unverändert weiter. Eine unlesbare Nachricht wird geloggt und
+übersprungen. Genau ein Consumer, damit die Reihenfolge stimmt. Der Test zeigt, dass `data:` gleich dem
+JSON auf `chat.persist` ist. Korrigiert: `LiveQueueIntegrationTest` hält jetzt den Listener an, weil er
+sonst die Nachricht vor dem Test abholt. Alle 25 Tests sind grün.
 
 ---
 

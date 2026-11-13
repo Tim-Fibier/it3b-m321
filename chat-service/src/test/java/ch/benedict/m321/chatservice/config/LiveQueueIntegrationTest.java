@@ -8,6 +8,7 @@ import com.rabbitmq.client.ConnectionFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
+import org.springframework.amqp.rabbit.listener.RabbitListenerEndpointRegistry;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -54,9 +55,18 @@ class LiveQueueIntegrationTest {
     @Autowired
     private RabbitAdmin rabbitAdmin;
 
-    /** Beide Queues überleben die einzelne Testmethode, darum vor jedem Test leeren. */
+    @Autowired
+    private RabbitListenerEndpointRegistry listenerRegistry;
+
+    /**
+     * Hält den Live-Listener an, damit er die Nachricht nicht vor dem Test aus der
+     * Queue holt. Hier geht es nur darum, ob die Kopie in der Queue ankommt; die
+     * Zustellung an den Stream prüft LiveDeliveryIntegrationTest. Danach werden
+     * beide Queues geleert, weil sie die einzelne Testmethode überleben.
+     */
     @BeforeEach
-    void emptyQueues() {
+    void stopListenerAndEmptyQueues() {
+        listenerRegistry.stop();
         rabbitAdmin.purgeQueue(QueueNames.PERSIST_QUEUE);
         rabbitAdmin.purgeQueue(LIVE_QUEUE);
     }
