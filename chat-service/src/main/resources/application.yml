@@ -17,6 +17,9 @@ chat-service:
   # jedem Container auf dessen kurze ID, auch bei --scale. Ausserhalb von
   # Docker greift der Vorgabewert "local".
   instance-id: ${HOSTNAME:local}
+  stream:
+    # Alle 15 s ein Kommentar an jeden Stream, damit tote Verbindungen auffallen.
+    heartbeat-millis: 15000
 
 logging:
   level:

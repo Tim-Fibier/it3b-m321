@@ -246,7 +246,10 @@ anderen nicht.
 **Test:** `StreamConnectionCleanupIntegrationTest`: Ein Client trennt, nach dem nächsten Herzschlag
 führt die Registry ihn nicht mehr; ein zweiter Client im selben Raum bekommt weiter alle Nachrichten.
 
-**Geprüft und korrigiert:** _nach dem Schritt ausfüllen_
+**Geprüft und korrigiert:** `StreamRegistry` gelesen: Eine Verbindung wird bei Ende, Timeout, Fehler und
+fehlgeschlagenem Schreiben entfernt. Der Herzschlag schickt alle 15 s `: ping`, damit hart getrennte
+Clients auffallen. Ein Fehler bei einem Client stört die anderen nicht. Gegenprobe ohne Aufräumen: 2
+statt 1 Verbindung. Nichts korrigiert. Alle 31 Tests sind grün.
 
 ---
 
