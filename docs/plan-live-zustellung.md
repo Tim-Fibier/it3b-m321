@@ -333,7 +333,12 @@ der Moment dort gezielt herstellen lässt. Über HTTP wäre das Glückssache. Al
 **Test:** `docker compose up -d --build --scale chat-service=2`, `rabbitmqctl list_bindings`: genau
 zwei Queues an `chat.delivery`, je ein Consumer. `docker compose ps`: kein veröffentlichter Port.
 
-**Geprüft und korrigiert:** _nach dem Schritt ausfüllen_
+**Geprüft und korrigiert:** `docker-compose.yml` gelesen: `chat-service` hat `POSTGRES_*`, kein
+`depends_on` auf postgres, keinen `container_name` und keine `ports`. `.env.example` braucht keine neuen
+Variablen, nur der Kommentar ist angepasst. Mit `--scale chat-service=2`: zwei Live-Queues an
+`chat.delivery`, ihre Namen sind die `HOSTNAME`s der Container, je ein Consumer, Argumente 950 /
+`drop-head` / 30000, kein Port veröffentlicht. Lokal startete postgres zuerst nicht, weil ein altes
+Volume Daten von PostgreSQL 17 enthält. Deshalb unter eigenem Projektnamen mit frischem Volume geprüft.
 
 ---
 
