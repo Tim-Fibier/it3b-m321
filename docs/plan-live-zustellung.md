@@ -142,7 +142,11 @@ aufruft. Fehler sind so klar dem Stream zuzuordnen.
 über die Registry kommt mit richtigem `id:` und `data:` beim Client an; ein Client in einem anderen
 Raum bekommt nichts.
 
-**Geprüft und korrigiert:** _nach dem Schritt ausfüllen_
+**Geprüft und korrigiert:** `StreamController`, `StreamRegistry` und den Test gelesen: Der Raumfilter
+sitzt in `sendToRoom`, der Kommentar `verbunden` geht vor dem Anmelden raus, 400 bei fehlender oder
+ungültiger `roomId`. Korrigiert: Beim ersten Lauf hing das Herunterfahren 30 s, weil Spring auf offene
+Streams wartet. Darum schliesst die Registry jetzt alle Streams beim Herunterfahren, sonst wäre S4
+gefährdet. Verschachtelte Aufrufe im Test aufgelöst. Alle 22 Tests sind grün.
 
 ---
 
