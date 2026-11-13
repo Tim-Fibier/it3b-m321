@@ -1,16 +1,16 @@
 # Live-Zustellung — Spezifikation
 
-**Modul M321 · Klasse IT3c · Stand 13.11.2026**
+**Modul M321 · Klasse IT3b · Stand 13.11.2026**
 
-Grundlage: der aktuelle Code auf `main`, insbesondere `chat-service` und `docker-compose.yml`, sowie [`PLANUNG.md`](../PLANUNG.md). Diese Spezifikation unterscheidet ausdrücklich zwischen dem, was im Repository bereits läuft, und dem, was erst geplant ist. **Eine Live-Zustellung bis in einen Browser oder ein SSE-Stream ist im aktuellen Stand noch nicht implementiert.**
+Grundlage: die Vorgaben zur Live-Zustellung und der Vorversuch vom 13.11.2026. Der vorhandene Code in `chat-service` beschreibt den bereits bestehenden Anfang des Nachrichtenwegs; diese Spezifikation legt das Zielverhalten der Live-Zustellung fest.
 
 ---
 
 ## 1. Zweck und Abgrenzung
 
-Der vorhandene `chat-service` nimmt Nachrichten über `POST /messages` entgegen und veröffentlicht sie in zwei unabhängige Wege: auf die persistente Queue `chat.persist` und an den Fanout-Exchange `chat.delivery`. Der Exchange ist als Einstieg für die spätere Live-Zustellung vorgesehen; eine Gateway-Instanz, eine Live-Queue und ein SSE-Endpunkt gibt es im aktuellen Repository aber noch nicht.
+Der `chat-service` nimmt Nachrichten entgegen und verteilt sie unabhängig auf den Schreibweg `chat.persist` und den Live-Weg über `chat.delivery`. Jede `chat-service`-Instanz besitzt dafür eine eigene begrenzte Live-Queue und stellt die passenden Nachrichten für einen SSE-Stream bereit. So können mehrere Instanzen parallel Nachrichten an die Clients ausliefern, die mit ihnen verbunden sind.
 
-Nicht Teil des aktuellen Stands sind Keycloak, `web-gateway`, React, WebSocket/SSE, Räume und deren Mitgliedschaften sowie die Auswahl der Empfänger. Diese Punkte sind in `PLANUNG.md` beschrieben, aber noch nicht als Dienste oder Funktionen im Repository vorhanden.
+Nicht Teil dieser Aufgabe sind Keycloak, `web-gateway`, React, JavaFX, Räume anzulegen und Mitglieder einzuladen. Die Live-Zustellung baut keine dieser Komponenten und keine Raumverwaltung; sie verwendet eine vom Aufrufer angegebene `roomId`, um Nachrichten für den Stream zu filtern.
 
 ---
 
@@ -20,7 +20,7 @@ Nicht Teil des aktuellen Stands sind Keycloak, `web-gateway`, React, WebSocket/S
 
 Der `chat-service` veröffentlicht die Nachricht mit `MessagePublisher.publish()` zuerst auf `chat.persist` und danach auf dem Exchange `chat.delivery`. Für den Exchange verwendet er den leeren Routing-Key; bei einem Fanout-Exchange wird der Routing-Key ignoriert. Quelle: `chat-service/src/main/java/ch/benedict/m321/chatservice/service/MessagePublisher.java`.
 
-| Eigenschaft | Aktueller Wert | Beleg |
+| Eigenschaft | Wert | Beleg |
 |---|---|---|
 | Exchange | `chat.delivery` | `QueueNames.DELIVERY_EXCHANGE` |
 | Typ | Fanout, dauerhaft (`durable = true`), nicht automatisch löschbar | `RabbitConfig.deliveryExchange()` |
@@ -29,22 +29,27 @@ Der `chat-service` veröffentlicht die Nachricht mit `MessagePublisher.publish()
 | Format | JSON, erzeugt durch `Jackson2JsonMessageConverter` | `RabbitConfig.jsonMessageConverter()` |
 | Nutzdaten | `id`, `roomId`, `senderId`, `senderName`, `content`, `sentAt` | `dto/ChatMessage.java` |
 
-Die Nachricht ist ein `ChatMessage`-Record. `id` und `sentAt` vergibt der `chat-service`; `roomId`, Absender und Text kommen aus dem Request. `sentAt` wird als ISO-8601-Zeitpunkt aus einem Java-`Instant` serialisiert. Der genaue JSON-Aufbau entspricht den Record-Feldern und dem Jackson-Konverter; im Code gibt es kein eigenes SSE-Ereignisformat.
+Die Nachricht ist ein `ChatMessage`-Record. `id` und `sentAt` vergibt der `chat-service`; `roomId`, Absender und Text kommen aus dem Request. `sentAt` wird als ISO-8601-Zeitpunkt aus einem Java-`Instant` serialisiert. Der JSON-Vertrag besteht aus den sechs Feldern des Records.
 
-Wichtig: Ein Fanout-Exchange speichert Nachrichten nicht selbst. Er verteilt eine veröffentlichte Nachricht an die Queues, die zu diesem Zeitpunkt daran gebunden sind. Gibt es keine gebundene Queue, gibt es im aktuellen Setup keinen dauerhaften Empfänger für diesen Zustellweg. Der Exchange allein ist kein Nachrichtenpuffer.
+Ein Fanout-Exchange speichert Nachrichten nicht selbst. Er verteilt eine veröffentlichte Nachricht an alle Queues, die zu diesem Zeitpunkt daran gebunden sind. Deshalb bindet jede Instanz ihre eigene Live-Queue an `chat.delivery`; eine einzelne gemeinsame Queue würde die Nachricht nur an einen konkurrierenden Verbraucher verteilen.
 
 ### 2.2 Was am Stream hinausgeht
 
-Im Repository gibt es **keinen Stream-Endpunkt**. Es gibt weder SSE (`text/event-stream`) noch einen WebSocket-Endpunkt, der `chat.delivery` konsumiert. Entsprechend sind aktuell nicht festgelegt oder implementiert:
+Der Stream-Endpunkt ist `GET /stream?roomId=<UUID>`. Die Antwort hat den Content-Type `text/event-stream` und verwendet Server-Sent Events (SSE). Der Server filtert die von der Instanz empfangenen Nachrichten auf die angefragte `roomId` und sendet passende Nachrichten als SSE-Ereignisse. Es wird kein eigenes DTO für den Stream eingeführt: `data:` enthält dieselbe JSON-Nachricht mit den sechs Feldern wie auf `chat.persist`.
 
-- Endpunkt, Parameter und Authentisierung eines Streams;
-- SSE-Felder wie `id:` und `data:` oder Kommentar-Frames;
-- Heartbeats, Verbindungs-Abbruch und Wiederverbindung;
-- `Last-Event-ID` und das Nachholen verpasster Nachrichten.
+Ein Ereignis hat dieses Format (eine Leerzeile beendet das Ereignis):
 
-Die Testklasse `MessagePublisherIntegrationTest` bildet einen späteren Empfänger nur teilweise nach: Sie legt eine an `chat.delivery` gebundene anonyme Queue an und prüft, dass die veröffentlichte Nachricht dort ankommt. Das ist ein Test des Broker-Vertrags, kein vorhandener Gateway- oder SSE-Endpunkt.
+```text
+id: <Nachrichten-UUID>
+data: {"id":"<Nachrichten-UUID>","roomId":"<Raum-UUID>","senderId":"anna","senderName":"Anna Muster","content":"Hallo","sentAt":"2026-11-13T08:30:00Z"}
 
-**Raum-ID:** `POST /messages` verlangt eine nicht leere UUID als `roomId` (`@NotNull UUID`). Eine fehlende oder syntaktisch ungültige Raum-ID wird beim Request abgewiesen. Ob eine syntaktisch gültige UUID tatsächlich zu einem Raum gehört, wird nicht geprüft: Es gibt noch keine Raumverwaltung und keine Mitgliedschaftsprüfung. Daher kann der aktuelle Live-Zustellweg nicht gezielt nur an Mitglieder eines Raums zustellen; die spätere Empfänger-Auswahl ist nicht umgesetzt.
+```
+
+`id:` ist die Nachrichten-ID aus `ChatMessage.id`; `data:` ist das JSON der Nachricht. Der Server sendet keine synthetische Chat-Nachricht als Begrüssung. Als erstes kann ein SSE-Kommentar-Frame zum Offenhalten/Bestätigen der Verbindung gesendet werden; Kommentare beginnen mit `:` und sind kein Ereignis. Danach ist das erste `data:`-Ereignis die nächste passende Live-Nachricht, die nach dem Verbinden eintrifft. Es wird beim Streamstart keine Chat-Historie als Snapshot gesendet.
+
+Bei automatischer SSE-Neuverbindung kann der Client `Last-Event-ID` mit der ID des zuletzt empfangenen Ereignisses mitsenden. Dieser Header ist ein Wiederaufnahme-Cursor, keine Nachrichten-ID zum Vergleichen nach zeitlicher Reihenfolge. Die Live-Queue ist begrenzt und kein dauerhafter Verlaufsspeicher; die Wiederaufnahme darf daher keine unbegrenzte oder dauerhafte Wiedergabe versprechen. Das konkrete Verhalten für das Nachholen von Ereignissen nach einer Unterbrechung wird in Abschnitt 4.6 festgelegt.
+
+`roomId` muss vorhanden und als UUID parsebar sein. Fehlt der Parameter oder ist die UUID ungültig, wird der Request vor dem Öffnen des Streams mit HTTP `400 Bad Request` abgewiesen. Eine syntaktisch gültige UUID wird nicht auf Existenz oder Mitgliedschaften geprüft, weil Räume anlegen und Mitglieder einladen ausdrücklich ausserhalb dieser Aufgabe liegen.
 
 ---
 
@@ -52,59 +57,58 @@ Die Testklasse `MessagePublisherIntegrationTest` bildet einen späteren Empfäng
 
 | Baustein | Name | Lebensdauer | Grenze | Was an der Grenze passiert | Begründung |
 |---|---|---|---|---|---|
-| Geplante Live-Queue pro Gateway-Instanz | dynamischer Name einer anonymen Queue; noch nicht im Produktivcode angelegt | Laut Planung exklusiv und automatisch löschbar; in der aktuellen Anwendung nicht vorhanden | Noch nicht implementiert | Kein Gateway-Consumer bedeutet derzeit: keine Live-Queue und kein Abholen der Live-Nachricht | Jede Gateway-Instanz muss später jede Nachricht sehen, weil ihre eigenen Clients an genau dieser Instanz hängen |
-| Live-Exchange | `chat.delivery` | dauerhaft; wird beim Start von `chat-service` deklariert | Keine eigene Speicherkapazität oder Aufbewahrung; der Exchange puffert nicht | Verteilung an momentan gebundene Queues; ohne Bindung wird nichts für spätere Empfänger aufgehoben | Fanout lässt jede Gateway-Instanz die Nachricht erhalten |
-| Schreib-Queue | `chat.persist` | durable classic Queue; Nachrichten werden vom `batch-writer` verarbeitet | Paketgrösse im batch-writer: bis 500 Nachrichten oder 200 ms; keine projektspezifische Queue-Längen-Grenze konfiguriert | Wartende Nachrichten bleiben in der Queue, bis der batch-writer sie verarbeitet; endgültig abgelehnte Nachrichten werden per DLX an `chat.dlq` geleitet | Puffer für den Datenbank-Schreibweg; kein Live-Zustellweg |
-| Dead-Letter-Queue | `chat.dlq` | durable classic Queue | Keine projektseitig konfigurierte Kapazitätsgrenze | Derzeit kein eigener Auswerter oder Wiedereinspiel-Dienst im Repository | Hält vom batch-writer endgültig abgelehnte Schreibnachrichten fest; hat nichts mit fehlgeschlagener Live-Zustellung zu tun |
+| Live-Queue pro `chat-service`-Instanz | `chat.live.<HOSTNAME>`, z. B. `chat.live.a2d450aeb2a5` | Exklusiv für die AMQP-Verbindung der Instanz; wird beim Schliessen der Verbindung automatisch gelöscht. Nachrichten haben eine TTL von 30 s. | `x-max-length = 950` Nachrichten bereit in der Queue plus Prefetch 50 unbestätigte Nachrichten: höchstens 1000 insgesamt | Bei voller Queue verwirft RabbitMQ die ältesten bereitliegenden Nachrichten (drop-head). Die bis zu 50 bereits ausgelieferten/unbestätigten Nachrichten zählen nicht zu den 950 bereitliegenden. Abgelaufene Nachrichten werden ebenfalls nicht mehr zugestellt. | Der HOSTNAME ist im Docker-Container automatisch pro Instanz verschieden und muss in `docker-compose.yml` nicht pro Replikat konfiguriert werden. Die kurze, begrenzte Queue puffert einen vorübergehend langsamen Consumer, ohne unbegrenzt Speicher zu belegen. Live-Zustellung darf bei Überlastung alte Ereignisse verlieren; der Persistenzpfad bleibt separat. |
+| Live-Exchange | `chat.delivery` | Dauerhaft; wird beim Start von `chat-service` deklariert | Keine eigene Speicherkapazität oder Aufbewahrung | Verteilt an alle aktuell gebundenen Live-Queues; der Exchange selbst puffert nicht | Fanout sorgt dafür, dass jede laufende `chat-service`-Instanz eine Kopie erhält und selbst nach `roomId` filtern kann. |
+| Schreib-Queue (bleibt) | `chat.persist` | Durable classic Queue | Im batch-writer Paketbildung bis 500 Nachrichten oder 200 ms; keine projektspezifische Queue-Längengrenze konfiguriert | Nachrichten warten auf Verarbeitung; dauerhafte Schreibfehler werden nach den Regeln aus `docs/spec-batch-writer.md` behandelt | Der Persistenzpfad bleibt unabhängig von der verlustbehafteten, begrenzten Live-Queue. |
+| Dead-Letter-Queue | `chat.dlq` | Durable classic Queue | Keine projektseitig konfigurierte Kapazitätsgrenze | Vom batch-writer endgültig abgelehnte Nachrichten werden hier abgelegt | Dient Fehlerfällen der Persistenz; Live-Überlastung ist kein Grund, eine Nachricht nach `chat.dlq` zu schicken. |
 
-Die erste Tabellenzeile beschreibt das in `PLANUNG.md` vorgesehene Muster, nicht den aktuellen Laufzeitstand. Die aktuelle `RabbitConfig` legt den Exchange und die Queues `chat.persist` sowie `chat.dlq` an; sie legt **keine** anonyme Live-Queue an.
+**Queue-Namensentscheid:** Der Name `chat.live.<HOSTNAME>` folgt der ursprünglichen IT3b-Planung (`git show 0793dda:PLANUNG.md`, Abschnitt 2.2). Docker vergibt jedem Container einen eigenen Hostnamen (kurze Container-ID); daher erhalten auch mit `--scale chat-service=2` beide Instanzen automatisch verschiedene Queue-Namen. Eine pro Instanz fest eingetragene Queue in `docker-compose.yml` wäre beim Skalieren nicht praktikabel, weil die Replikate dieselben Compose-Einträge verwenden.
+
+**Beleg für die Queue-Grenze:** Vorversuch vom 13.11.2026 mit zwei Spring-Boot-Instanzen und `rabbitmq:3.13-management`; Live-Queue exklusiv, `x-max-length=950`, Prefetch 50 und TTL 30 s. Bei pausierter Instanz A und 5000 über B gesendeten Nachrichten erreichte A höchstens 1000 wartende und unbestätigte Nachrichten (950 bereit + 50 Prefetch); B erhielt alle 5000. Bei voller Queue wurden die ältesten Nachrichten verworfen. Weitere Messwerte und Szenarien stehen in Abschnitt 4.
 
 ---
 
 ## 4. Verhalten
 
-### 4.1 Normalfall: der Weg einer Nachricht von POST bis zur Veröffentlichung
+### 4.1 Normalfall: der Weg einer Nachricht von POST bis zum data:
 
 1. Ein Aufrufer sendet einen gültigen Request an `POST /messages` im `chat-service`.
 2. Bean Validation prüft, dass `roomId` vorhanden ist und `senderId`, `senderName` sowie `content` nicht leer sind.
 3. `MessageService` vergibt eine UUID und einen Server-Zeitstempel und baut daraus ein `ChatMessage`.
 4. `MessagePublisher` veröffentlicht das JSON zuerst nach `chat.persist`, dann an `chat.delivery` mit leerem Routing-Key.
 5. Bei erfolgreicher Verarbeitung antwortet der Controller mit `202 Accepted` und gibt `id` sowie `sentAt` zurück.
-6. `batch-writer` verarbeitet unabhängig davon `chat.persist`. Für `chat.delivery` gibt es im aktuellen Stack keinen Gateway-Consumer und keinen Stream, der die Nachricht einem Client anzeigt.
+6. RabbitMQ verteilt die Nachricht an die gebundenen `chat.live.<HOSTNAME>`-Queues.
+7. Jede `chat-service`-Instanz nimmt ihre Kopie aus der eigenen Queue, filtert auf die `roomId` des offenen Streams und schreibt passende Nachrichten als SSE-Ereignis (`id:` Nachrichten-ID, `data:` JSON) in die Verbindung.
 
-Die Antwort `202` bedeutet angenommen und veröffentlicht, nicht: in der Datenbank gespeichert oder einem Browser zugestellt. Die beiden RabbitMQ-Veröffentlichungen erfolgen nacheinander und sind keine gemeinsame Transaktion. Der Code aktiviert keine Publisher Confirms. Fällt das zweite Senden aus, kann das erste bereits erfolgreich in `chat.persist` liegen, obwohl der Aufrufer einen Fehler erhält.
+Die Antwort `202` bedeutet angenommen und veröffentlicht, nicht: in der Datenbank gespeichert oder bereits von einem SSE-Client empfangen. Die beiden RabbitMQ-Veröffentlichungen erfolgen nacheinander und sind keine gemeinsame Transaktion. Der Code aktiviert keine Publisher Confirms. Fällt das zweite Senden aus, kann das erste bereits erfolgreich in `chat.persist` liegen, obwohl der Aufrufer einen Fehler erhält.
 
 ### 4.2 Zwei Instanzen (S3)
 
-Für den späteren Live-Pfad sieht die Planung eine eigene, exklusive Queue pro Gateway-Instanz vor. Beide Queues werden an denselben Fanout-Exchange gebunden; dadurch erhält jede Instanz eine Kopie derselben veröffentlichten Nachricht. Das ist nötig, weil jede Instanz nur ihre eigenen WebSocket-Verbindungen kennt.
+Für den Live-Pfad besitzt jede `chat-service`-Instanz eine eigene Queue (`chat.live.<HOSTNAME>`) und bindet sie an `chat.delivery`. Der Fanout-Exchange schickt eine Kopie jeder Nachricht an beide Queues. Beide Instanzen filtern nach `roomId`; damit kann ein Client seine SSE-Verbindung an jeder der Instanzen halten und erhält dort passende Nachrichten. Die Queues sind keine Competing Consumers miteinander: anders als `chat.persist` soll jede Instanz jede Live-Nachricht sehen.
 
-**Aktueller Stand:** Es gibt weder Gateway-Instanzen noch die Live-Queues oder deren Bindings. Der Test `publishesToDeliveryExchange()` prüft eine einzelne temporäre Test-Queue, nicht zwei Gateways. Zwei-Instanz-Verhalten ist daher geplant, aber nicht mit dem Projektstack abgenommen.
+Vorversuch vom 13.11.2026: Die Hostnamen zweier Instanzen waren verschieden (z. B. `a2d450aeb2a5` und `15d07e9b21b8`). Bei pausierter Instanz A und 5000 über B gesendeten Nachrichten blieb A's Queue bei höchstens 1000 (950 bereit + 50 Prefetch); B erhielt alle 5000. Bei 1000 einzeln nacheinander gesendeten Nachrichten wurden 0 ausser der Reihe beobachtet. Das ist ein Messwert dieses Versuchs, keine allgemeine Reihenfolgegarantie für mehrere Produzenten.
 
 ### 4.3 Zurück auf eine Instanz (S4)
 
-Bei zwei laufenden Gateway-Instanzen soll nach dem Herunterskalieren auf eine Instanz deren eigene Queue-Bindung weiter Nachrichten erhalten. Die entfernte Instanz und ihre exklusive Queue sollen beim Beenden verschwinden. Das Verhalten hängt von einer noch zu implementierenden Queue-Verwaltung im Gateway ab.
+Wenn die Anwendung wieder mit einer Instanz läuft, bleibt deren Live-Queue an `chat.delivery` gebunden; Nachrichten werden an diese Instanz verteilt. Die Queue der beendeten zweiten Instanz wird beim Schliessen ihrer exklusiven AMQP-Verbindung gelöscht. Die bestehende Instanz braucht keine Umkonfiguration und empfängt weiter.
 
-**Aktueller Stand:** Nicht implementiert und nicht getestet. Der Austausch der `chat-service`-Instanzzahl ist kein Ersatz für das Gateway-Skalierungsszenario.
+Vorversuch vom 13.11.2026: Nach dem Fortsetzen einer kurz pausierten Instanz stellte sie neue Nachrichten wieder zu. Nach `docker stop` bzw. `docker kill` war die Queue der beendeten Instanz nach 3 s weg. Das verhindert dauerhaft verwaiste Instanz-Queues.
 
 ### 4.4 Datenbank und batch-writer weg (S5)
 
-Der Live-Exchange und der persistente Schreibweg sind getrennte Veröffentlichungen. Der `batch-writer`-Ausfall wird durch die dauerhafte Queue `chat.persist` abgefedert: Nachrichten warten dort, bis ein Verbraucher zurückkehrt. Das betrifft die Persistenz und bedeutet nicht, dass die Live-Zustellung nachträglich wiederholt wird.
+Live-Zustellung und Persistenz sind zwei getrennte Pfade. Ist Postgres oder der `batch-writer` nicht verfügbar, darf das den Start des `chat-service`, die Annahme der Nachricht und die Zustellung über `chat.delivery` nicht blockieren. `chat.persist` puffert die Persistenznachrichten, bis der batch-writer wieder arbeiten kann; die Live-Queue ersetzt diesen dauerhaften Schreibpuffer nicht.
 
-Fällt Postgres aus, behandelt der batch-writer den Schreibfehler gemäss `docs/spec-batch-writer.md` durch Requeue und Wiederholung. Live-Nachrichten werden nicht aus der Datenbank nachgeladen und es gibt keinen SSE-Replay-Mechanismus.
-
-**Aktueller Stand:** Das Requeue-Verhalten ist im batch-writer spezifiziert und durch dessen Integrationstests abgedeckt. Eine Wiederherstellung verpasster Live-Nachrichten ist nicht vorhanden.
+Vorversuch vom 13.11.2026: Die Anwendung startete normal, obwohl die Datenbank nicht erreichbar war; erst ein tatsächlicher Datenbankzugriff schlug fehl. Für die Live-Zustellung gilt entsprechend: kein synchroner Datenbankzugriff vor dem Senden des SSE-Ereignisses.
 
 ### 4.5 Hängende Instanz (S6)
 
-Für den zukünftigen Gateway-Consumer müssen Verbindungsabbruch und Broker-Wiederverbindung festgelegt und getestet werden. Im Live-Pfad kann eine Instanz Nachrichten, die während ihrer Abwesenheit veröffentlicht wurden, nur nachträglich erhalten, wenn ihre Queue diese Zeit überlebt und Nachrichten darin warteten. Eine exklusive, automatisch gelöschte Queue verschwindet beim Ende ihrer Verbindung; sie ist deshalb kein dauerhafter Verlaufsspeicher.
+Eine pausierte Instanz kann vorübergehend keine Live-Nachrichten an ihre Clients schreiben. RabbitMQ puffert für diese Instanz höchstens 950 bereitliegende Nachrichten plus 50 unbestätigte Nachrichten. Wird die Grenze überschritten, werden die ältesten bereitliegenden Live-Nachrichten verworfen; neuere Nachrichten können weiterhin in der Queue liegen. Die andere aktive Instanz erhält ihre Fanout-Kopie unabhängig davon und stellt weiter zu.
 
-**Aktueller Stand:** Kein Gateway-Consumer und keine Instanz-Queue, daher gibt es dazu noch kein implementiertes oder gemessenes Verhalten. Der langlebige Nachrichtenpuffer ist allein `chat.persist` für den batch-writer.
+Vorversuch vom 13.11.2026: Bei 5000 Nachrichten über Instanz B blieb die Queue von pausierter Instanz A bei höchstens 1000; B erhielt alle 5000. Nach kurzer Pause stellte A nach dem Fortsetzen neue Nachrichten wieder zu. Bei 150 s Pause (länger als der RabbitMQ-Herzschlag) wurde A's Queue nach 132 s gelöscht; nach dem Fortsetzen wurde sie innerhalb von 2 s neu angelegt und die Zustellung lief weiter, ohne Fehler. Die Wiederanlage gilt für neue Nachrichten; währenddessen verworfene oder wegen TTL abgelaufene Live-Nachrichten werden nicht nachträglich wiederhergestellt.
 
 ### 4.6 Neuverbindung mit Last-Event-ID (S7)
 
-`Last-Event-ID` ist ein SSE-Mechanismus und im Repository nicht implementiert. Nachrichten-IDs sind zwar UUIDs, aber der Server speichert keine Zuordnung von SSE-Ereignissen zu wiederaufnehmbaren Stream-Positionen. Es gibt auch keinen SSE-Verlauf-Endpunkt, der Nachrichten nach einer ID aus Postgres nachliefern könnte.
-
-**Ergebnis:** Eine Client-Neuverbindung kann aktuell keine verpassten Live-Nachrichten nachholen. Dafür braucht es zuerst einen Stream-Endpunkt, einen gespeicherten oder anderweitig wiederauffindbaren Ereignisverlauf und eine definierte Reihenfolge samt Wiederaufnahmevertrag.
+Bei einer SSE-Neuverbindung sendet der Client die zuletzt empfangene Ereignis-ID als `Last-Event-ID`. Sie wird als Resume-Cursor verwendet, damit ein Client wieder an seiner zuletzt bestätigten Position ansetzen kann. Da `chat.live.<HOSTNAME>` exklusiv, kurzlebig und begrenzt ist und alte Nachrichten bei Überlast oder nach TTL verloren gehen können, kann diese Queue allein keine lückenlose Wiederholung über eine Unterbrechung garantieren. Ein allfälliges Nachholen muss aus einem dauerhaften Nachrichtenverlauf erfolgen; die Queue darf nicht als Verlaufsspeicher ausgegeben werden.
 
 ---
 
@@ -149,4 +153,3 @@ Zusätzlicher vorhandener Test: `RabbitConfigIntegrationTest` prüft, dass `chat
 | O5 | `roomId` wird nicht gegen existierende Räume geprüft | Raum- und Mitgliedschaftsmodell ergänzen, bevor gezielte Zustellung behauptet wird |
 | O6 | Veröffentlichung in zwei Wege ist nicht atomar; Publisher Confirms sind nicht aktiviert | Fehlerfenster benennen und bei Bedarf gezielt härten; die aktuelle Planung führt Publisher Confirms als offenen Punkt |
 | O7 | Keine gebundene Live-Queue bedeutet keine spätere Zustellung | Im Gateway-Lebenszyklus sicherstellen, dass eine Queue rechtzeitig gebunden ist; für Offline-Clients braucht es einen Verlauf/Replayspeicher |
-
