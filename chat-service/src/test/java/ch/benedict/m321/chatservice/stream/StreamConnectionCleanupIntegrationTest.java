@@ -7,6 +7,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -65,8 +67,10 @@ class StreamConnectionCleanupIntegrationTest {
             int remaining = waitForConnections(roomId, 1);
             assertEquals(1, remaining);
 
-            String messageId = UUID.randomUUID().toString();
-            streamRegistry.sendToRoom(roomId, messageId, "{\"content\":\"weiter\"}");
+            StreamEvent sent = TestEvents.withJson("{\"content\":\"weiter\"}");
+            UUID sentId = sent.id();
+            String messageId = sentId.toString();
+            streamRegistry.sendToRoom(roomId, sent);
             SseEvent event = staying.nextEvent(ARRIVES);
             assertNotNull(event);
             assertEquals(messageId, event.id());
@@ -87,15 +91,18 @@ class StreamConnectionCleanupIntegrationTest {
             SseTestClient leaving = SseTestClient.connect(uri);
             leaving.close();
 
+            List<String> sentIds = new ArrayList<>();
             for (int i = 1; i <= 20; i++) {
-                String messageId = Integer.toString(i);
-                streamRegistry.sendToRoom(roomId, messageId, "{\"content\":\"" + i + "\"}");
+                StreamEvent sent = TestEvents.withJson("{\"content\":\"" + i + "\"}");
+                UUID sentId = sent.id();
+                String messageId = sentId.toString();
+                sentIds.add(messageId);
+                streamRegistry.sendToRoom(roomId, sent);
             }
 
-            for (int i = 1; i <= 20; i++) {
+            for (String expectedId : sentIds) {
                 SseEvent event = staying.nextEvent(ARRIVES);
-                assertNotNull(event, "Nachricht " + i + " fehlt");
-                String expectedId = Integer.toString(i);
+                assertNotNull(event, "Nachricht " + expectedId + " fehlt");
                 assertEquals(expectedId, event.id());
             }
         }

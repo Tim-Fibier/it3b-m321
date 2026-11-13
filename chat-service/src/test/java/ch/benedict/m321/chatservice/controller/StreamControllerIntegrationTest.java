@@ -2,7 +2,9 @@ package ch.benedict.m321.chatservice.controller;
 
 import ch.benedict.m321.chatservice.stream.SseEvent;
 import ch.benedict.m321.chatservice.stream.SseTestClient;
+import ch.benedict.m321.chatservice.stream.StreamEvent;
 import ch.benedict.m321.chatservice.stream.StreamRegistry;
+import ch.benedict.m321.chatservice.stream.TestEvents;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -74,21 +76,49 @@ class StreamControllerIntegrationTest {
         assertEquals(400, status);
     }
 
+    /** Eine Last-Event-ID, die keine UUID ist, kann keine Nachrichten-ID sein: 400. */
+    @Test
+    void rejectsLastEventIdThatIsNoUuid() throws Exception {
+        UUID roomId = UUID.randomUUID();
+        URI uri = streamUri(roomId);
+
+        int status = SseTestClient.statusOf(uri, "kaputt");
+
+        assertEquals(400, status);
+    }
+
+    /**
+     * Diese Tests laufen ohne Datenbank. Eine Neuverbindung kann dann nicht
+     * nachholen und bekommt 503, statt still ohne die verpassten Nachrichten
+     * weiterzumachen. Der Client versucht es später mit derselben ID erneut.
+     */
+    @Test
+    void answersServiceUnavailableWhenDatabaseIsDown() throws Exception {
+        UUID roomId = UUID.randomUUID();
+        URI uri = streamUri(roomId);
+        String lastEventId = UUID.randomUUID().toString();
+
+        int status = SseTestClient.statusOf(uri, lastEventId);
+
+        assertEquals(503, status);
+    }
+
     /** Was die Registry an den Raum schickt, kommt mit richtigem id: und data: an. */
     @Test
     void deliversEventWithIdAndData() throws Exception {
         UUID roomId = UUID.randomUUID();
         URI uri = streamUri(roomId);
-        String messageId = UUID.randomUUID().toString();
-        String json = "{\"id\":\"" + messageId + "\",\"content\":\"Hallo\"}";
+        StreamEvent sent = TestEvents.withJson("{\"content\":\"Hallo\"}");
+        UUID sentId = sent.id();
+        String messageId = sentId.toString();
 
         try (SseTestClient client = SseTestClient.connect(uri)) {
-            streamRegistry.sendToRoom(roomId, messageId, json);
+            streamRegistry.sendToRoom(roomId, sent);
 
             SseEvent event = client.nextEvent(ARRIVES);
             assertNotNull(event);
             assertEquals(messageId, event.id());
-            assertEquals(json, event.data());
+            assertEquals(sent.json(), event.data());
         }
     }
 
@@ -99,11 +129,11 @@ class StreamControllerIntegrationTest {
         UUID roomB = UUID.randomUUID();
         URI uriA = streamUri(roomA);
         URI uriB = streamUri(roomB);
-        String messageId = UUID.randomUUID().toString();
+        StreamEvent onlyForA = TestEvents.withJson("{\"content\":\"nur fuer A\"}");
 
         try (SseTestClient clientA = SseTestClient.connect(uriA);
              SseTestClient clientB = SseTestClient.connect(uriB)) {
-            streamRegistry.sendToRoom(roomA, messageId, "{\"content\":\"nur fuer A\"}");
+            streamRegistry.sendToRoom(roomA, onlyForA);
 
             SseEvent eventA = clientA.nextEvent(ARRIVES);
             SseEvent eventB = clientB.nextEvent(STAYS_AWAY);

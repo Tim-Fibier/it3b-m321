@@ -46,10 +46,15 @@ public final class SseTestClient implements AutoCloseable {
      * ist die Verbindung auf dem Server bereits registriert.
      */
     public static SseTestClient connect(URI uri) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder(uri)
-                .header("Accept", "text/event-stream")
-                .GET()
-                .build();
+        return connect(uri, null);
+    }
+
+    /**
+     * Öffnet einen Stream als Neuverbindung: mit Last-Event-ID, so wie es ein
+     * Browser nach einem Abbruch von selbst tut. null heisst ohne Header.
+     */
+    public static SseTestClient connect(URI uri, String lastEventId) throws IOException, InterruptedException {
+        HttpRequest request = buildRequest(uri, lastEventId);
         HttpResponse.BodyHandler<InputStream> bodyHandler = HttpResponse.BodyHandlers.ofInputStream();
         HttpResponse<InputStream> response = HTTP_CLIENT.send(request, bodyHandler);
         return new SseTestClient(response);
@@ -57,13 +62,26 @@ public final class SseTestClient implements AutoCloseable {
 
     /** Für Aufrufe, die abgewiesen werden sollen: Nur der Statuscode zählt. */
     public static int statusOf(URI uri) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder(uri)
-                .header("Accept", "text/event-stream")
-                .GET()
-                .build();
+        return statusOf(uri, null);
+    }
+
+    /** Wie statusOf, aber mit Last-Event-ID; null heisst ohne Header. */
+    public static int statusOf(URI uri, String lastEventId) throws IOException, InterruptedException {
+        HttpRequest request = buildRequest(uri, lastEventId);
         HttpResponse.BodyHandler<String> bodyHandler = HttpResponse.BodyHandlers.ofString();
         HttpResponse<String> response = HTTP_CLIENT.send(request, bodyHandler);
         return response.statusCode();
+    }
+
+    /** Baut die GET-Anfrage für einen Stream, mit oder ohne Last-Event-ID. */
+    private static HttpRequest buildRequest(URI uri, String lastEventId) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(uri)
+                .header("Accept", "text/event-stream")
+                .GET();
+        if (lastEventId != null) {
+            builder.header("Last-Event-ID", lastEventId);
+        }
+        return builder.build();
     }
 
     /** Der HTTP-Status der Antwort. */

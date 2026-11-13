@@ -10,6 +10,7 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -49,14 +50,16 @@ public class LiveMessageListener {
         }
 
         UUID id = address.id();
-        String messageId = id.toString();
+        Instant sentAt = address.sentAt();
         UUID roomId = address.roomId();
-        streamRegistry.sendToRoom(roomId, messageId, json);
+        StreamEvent event = new StreamEvent(id, sentAt, json);
+        streamRegistry.sendToRoom(roomId, event);
     }
 
     /**
-     * Liest ID und Raum aus dem JSON. Gibt null zurück, wenn das nicht geht,
-     * weil ohne beides niemand weiss, wohin die Nachricht gehört.
+     * Liest ID, Raum und Zeitpunkt aus dem JSON. Gibt null zurück, wenn das nicht
+     * geht: Ohne ID und Raum weiss niemand, wohin die Nachricht gehört, ohne
+     * Zeitpunkt lässt sie sich beim Nachholen nicht einordnen.
      */
     private LiveMessageAddress readAddress(String json) {
         LiveMessageAddress address;
@@ -66,8 +69,8 @@ public class LiveMessageListener {
             log.warn("Unreadable message on live queue skipped: {}", exception.getOriginalMessage());
             return null;
         }
-        if (address.id() == null || address.roomId() == null) {
-            log.warn("Message without id or roomId on live queue skipped");
+        if (address.id() == null || address.roomId() == null || address.sentAt() == null) {
+            log.warn("Message without id, roomId or sentAt on live queue skipped");
             return null;
         }
         return address;

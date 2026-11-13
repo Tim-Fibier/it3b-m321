@@ -32,57 +32,57 @@ public class StreamRegistry {
      * während der Listener-Thread liest, darum Klassen, die gleichzeitigen
      * Zugriff vertragen.
      */
-    private final Map<UUID, Set<SseEmitter>> emittersByRoom = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<StreamConnection>> connectionsByRoom = new ConcurrentHashMap<>();
+
+    /** Nimmt eine neue Verbindung auf, die sofort live ist. */
+    public StreamConnection register(UUID roomId, SseEmitter emitter) {
+        StreamConnection connection = new StreamConnection(emitter, false);
+        add(roomId, connection);
+        return connection;
+    }
 
     /**
-     * Nimmt eine neue Verbindung in ihren Raum auf und sorgt dafür, dass sie
-     * wieder verschwindet, sobald sie endet: regulär, durch Zeitablauf oder
-     * durch einen Fehler. Sonst sammelten sich tote Verbindungen an.
+     * Nimmt eine Verbindung auf, die zuerst nachholt. Ab jetzt werden Live-
+     * Nachrichten für sie gepuffert. Darum muss das geschehen, bevor die
+     * Datenbank gelesen wird: Was danach kommt, ist dann sicher im Puffer.
      */
-    public void register(UUID roomId, SseEmitter emitter) {
-        emitter.onCompletion(() -> remove(roomId, emitter));
-        emitter.onTimeout(() -> remove(roomId, emitter));
-        emitter.onError(error -> remove(roomId, emitter));
-
-        // compute arbeitet pro Raum atomar. Ohne das könnte eine neue Verbindung
-        // in einer Menge landen, die ein anderer Thread gerade als leer entfernt.
-        emittersByRoom.compute(roomId, (key, emitters) -> withEmitter(emitters, emitter));
-        log.debug("Stream for room {} registered", roomId);
+    public StreamConnection registerCatchingUp(UUID roomId, SseEmitter emitter) {
+        StreamConnection connection = new StreamConnection(emitter, true);
+        add(roomId, connection);
+        return connection;
     }
 
     /** Nimmt eine Verbindung aus ihrem Raum; ist der Raum danach leer, verschwindet er ganz. */
-    public void remove(UUID roomId, SseEmitter emitter) {
-        emittersByRoom.computeIfPresent(roomId, (key, emitters) -> withoutEmitter(emitters, emitter));
+    public void remove(UUID roomId, StreamConnection connection) {
+        connectionsByRoom.computeIfPresent(roomId, (key, connections) -> withoutConnection(connections, connection));
         log.debug("Stream for room {} removed", roomId);
     }
 
     /** Wie viele Verbindungen in einem Raum offen sind. Zeigt in Tests, ob aufgeräumt wurde. */
     public int countConnections(UUID roomId) {
-        Set<SseEmitter> emitters = emittersByRoom.get(roomId);
-        if (emitters == null) {
+        Set<StreamConnection> connections = connectionsByRoom.get(roomId);
+        if (connections == null) {
             return 0;
         }
-        return emitters.size();
+        return connections.size();
     }
 
     /**
-     * Schickt eine Nachricht an alle Verbindungen eines Raums. "id:" ist die
-     * Nachrichten-ID, damit der Client sie bei einer Neuverbindung als
-     * Last-Event-ID zurückschickt.
-     *
-     * Ohne Verbindung in diesem Raum passiert nichts: Die Nachricht ist dann für
-     * diese Instanz nicht bestimmt. Den Verlauf hat ohnehin die Datenbank.
+     * Gibt eine Nachricht an alle Verbindungen eines Raums. Ohne Verbindung in
+     * diesem Raum passiert nichts: Die Nachricht ist dann für diese Instanz
+     * nicht bestimmt. Den Verlauf hat ohnehin die Datenbank.
      */
-    public void sendToRoom(UUID roomId, String messageId, String json) {
-        Set<SseEmitter> emitters = emittersByRoom.get(roomId);
-        if (emitters == null) {
+    public void sendToRoom(UUID roomId, StreamEvent event) {
+        Set<StreamConnection> connections = connectionsByRoom.get(roomId);
+        if (connections == null) {
             return;
         }
-        for (SseEmitter emitter : emitters) {
-            SseEmitter.SseEventBuilder event = SseEmitter.event()
-                    .id(messageId)
-                    .data(json);
-            trySend(roomId, emitter, event);
+        for (StreamConnection connection : connections) {
+            try {
+                connection.deliver(event);
+            } catch (IOException | IllegalStateException exception) {
+                dropBroken(roomId, connection, exception);
+            }
         }
     }
 
@@ -96,12 +96,15 @@ public class StreamRegistry {
      */
     @Scheduled(fixedRateString = "${chat-service.stream.heartbeat-millis}")
     public void sendHeartbeat() {
-        for (Map.Entry<UUID, Set<SseEmitter>> room : emittersByRoom.entrySet()) {
+        for (Map.Entry<UUID, Set<StreamConnection>> room : connectionsByRoom.entrySet()) {
             UUID roomId = room.getKey();
-            Set<SseEmitter> emitters = room.getValue();
-            for (SseEmitter emitter : emitters) {
-                SseEmitter.SseEventBuilder heartbeat = SseEmitter.event().comment(HEARTBEAT_COMMENT);
-                trySend(roomId, emitter, heartbeat);
+            Set<StreamConnection> connections = room.getValue();
+            for (StreamConnection connection : connections) {
+                try {
+                    connection.sendComment(HEARTBEAT_COMMENT);
+                } catch (IOException | IllegalStateException exception) {
+                    dropBroken(roomId, connection, exception);
+                }
             }
         }
     }
@@ -117,46 +120,60 @@ public class StreamRegistry {
      */
     @EventListener(ContextClosedEvent.class)
     public void completeAllOnShutdown() {
-        for (Set<SseEmitter> emitters : emittersByRoom.values()) {
-            for (SseEmitter emitter : emitters) {
+        for (Set<StreamConnection> connections : connectionsByRoom.values()) {
+            for (StreamConnection connection : connections) {
+                SseEmitter emitter = connection.emitter();
                 emitter.complete();
             }
         }
-        emittersByRoom.clear();
+        connectionsByRoom.clear();
         log.info("All streams completed for shutdown");
     }
 
     /**
-     * Schreibt in eine Verbindung. Geht das nicht, ist der Client weg: Die
-     * Verbindung wird entfernt, und die übrigen Clients bekommen ihr Ereignis
-     * trotzdem. Kein eigenes Sperren nötig, der Emitter sperrt selbst, wenn zwei
-     * Threads gleichzeitig senden.
+     * Trägt eine Verbindung in ihren Raum ein und sorgt dafür, dass sie wieder
+     * verschwindet, sobald sie endet: regulär, durch Zeitablauf oder durch einen
+     * Fehler. Sonst sammelten sich tote Verbindungen an.
      */
-    private void trySend(UUID roomId, SseEmitter emitter, SseEmitter.SseEventBuilder event) {
-        try {
-            emitter.send(event);
-        } catch (IOException | IllegalStateException exception) {
-            log.debug("Stream for room {} not writable, removed: {}", roomId, exception.getMessage());
-            remove(roomId, emitter);
-        }
+    private void add(UUID roomId, StreamConnection connection) {
+        SseEmitter emitter = connection.emitter();
+        emitter.onCompletion(() -> remove(roomId, connection));
+        emitter.onTimeout(() -> remove(roomId, connection));
+        emitter.onError(error -> remove(roomId, connection));
+
+        // compute arbeitet pro Raum atomar. Ohne das könnte eine neue Verbindung
+        // in einer Menge landen, die ein anderer Thread gerade als leer entfernt.
+        connectionsByRoom.compute(roomId, (key, connections) -> withConnection(connections, connection));
+        log.debug("Stream for room {} registered", roomId);
+    }
+
+    /**
+     * Ein Schreiben ist fehlgeschlagen, der Client ist also weg. Die Verbindung
+     * wird entfernt; die übrigen Clients bekommen ihr Ereignis trotzdem.
+     */
+    private void dropBroken(UUID roomId, StreamConnection connection, Exception exception) {
+        log.debug("Stream for room {} not writable, removed: {}", roomId, exception.getMessage());
+        remove(roomId, connection);
     }
 
     /** Die Menge eines Raums mit der neuen Verbindung; legt sie beim ersten Mal an. */
-    private static Set<SseEmitter> withEmitter(Set<SseEmitter> emitters, SseEmitter emitter) {
-        Set<SseEmitter> result = emitters;
+    private static Set<StreamConnection> withConnection(Set<StreamConnection> connections,
+                                                        StreamConnection connection) {
+        Set<StreamConnection> result = connections;
         if (result == null) {
             result = new CopyOnWriteArraySet<>();
         }
-        result.add(emitter);
+        result.add(connection);
         return result;
     }
 
     /** Die Menge ohne die Verbindung; null, wenn sie leer ist, damit der Raum verschwindet. */
-    private static Set<SseEmitter> withoutEmitter(Set<SseEmitter> emitters, SseEmitter emitter) {
-        emitters.remove(emitter);
-        if (emitters.isEmpty()) {
+    private static Set<StreamConnection> withoutConnection(Set<StreamConnection> connections,
+                                                           StreamConnection connection) {
+        connections.remove(connection);
+        if (connections.isEmpty()) {
             return null;
         }
-        return emitters;
+        return connections;
     }
 }

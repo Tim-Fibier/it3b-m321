@@ -307,7 +307,14 @@ Nachricht kommt live an. Zweiter Fall: Eine Nachricht trifft während des Nachho
 einmal an. Fehlerfälle: `Last-Event-ID` keine UUID ergibt 400, unbekannte ID 409, ID aus einem
 anderen Raum 409, gestoppter PostgreSQL-Container 503.
 
-**Geprüft und korrigiert:** _nach dem Schritt ausfüllen_
+**Geprüft und korrigiert:** `StreamService`, `StreamConnection` und die Tests gelesen: Ablauf 400 → 409 →
+Puffer → Datenbank lesen (503 bei Ausfall) → zusammenführen, Doppelte entfernen, sortiert senden,
+atomar auf live. Korrigiert: Eine nachgeholte Nachricht, deren Live-Kopie erst nach dem Umschalten
+ankommt, wäre doppelt gekommen. Die Verbindung merkt sich jetzt die nachgeholten IDs. Gegenprobe ohne
+diese Prüfung: 1100 statt 1000 Nachrichten. UUIDs werden wie in PostgreSQL als Text verglichen.
+Abweichungen vom Plan: 503 wird mit nicht erreichbarer statt gestoppter Datenbank geprüft. Der Fall
+„Nachricht trifft während des Nachholens ein“ wird im Unit-Test `StreamConnectionTest` geprüft, weil sich
+der Moment dort gezielt herstellen lässt. Über HTTP wäre das Glückssache. Alle 47 Tests sind grün.
 
 ---
 
