@@ -114,7 +114,11 @@ keine Logik geändert. Stichproben zeigen, dass die Kommentare erklären, wozu d
 **Test:** `LiveQueueIntegrationTest`: Queue existiert unter dem erwarteten Namen; eine über
 `MessagePublisher` veröffentlichte Nachricht liegt danach in dieser Queue und in `chat.persist`.
 
-**Geprüft und korrigiert:** _nach dem Schritt ausfüllen_
+**Geprüft und korrigiert:** Diff gelesen: Die Queue ist nicht dauerhaft und exklusiv, der Name kommt
+aus `HOSTNAME` über `chat-service.instance-id`, es gibt noch keinen Listener und keine Grenzen.
+Zusätzlich gibt es einen Test, der belegt, dass die Queue exklusiv ist. Die Gegenprobe ohne
+`.exclusive()` schlägt fehl. Veraltete Kommentare zu web-gateway und WebSocket sind angepasst. Alle 17
+Tests sind grün.
 
 ---
 

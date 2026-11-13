@@ -12,6 +12,12 @@ spring:
 server:
   port: 8080
 
+chat-service:
+  # Jede Instanz braucht eine eigene Live-Queue. Docker setzt HOSTNAME in
+  # jedem Container auf dessen kurze ID, auch bei --scale. Ausserhalb von
+  # Docker greift der Vorgabewert "local".
+  instance-id: ${HOSTNAME:local}
+
 logging:
   level:
     # Im Unterricht wollen wir jeden Schritt sehen.
